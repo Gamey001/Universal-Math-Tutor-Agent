@@ -35,6 +35,14 @@ _ALLOWED_NAMES = {
     "exp": sp.exp,
     "abs": sp.Abs,
     "pi": sp.pi,
+    "factorial": sp.factorial,
+    "binomial": sp.binomial,
+    "gcd": sp.gcd,
+    "lcm": sp.lcm,
+    "floor": sp.floor,
+    "ceiling": sp.ceiling,
+    "ceil": sp.ceiling,
+    "mod": sp.Mod,
 }
 
 _UNICODE_REPLACEMENTS = {
@@ -87,6 +95,8 @@ def normalize(text: str) -> str:
     s = re.sub(r"(?<=\d)\s*[xX]\s*(?=\d)", "*", s)  # "3 x 4" meaning times
     s = re.sub(r"(\d+(?:\.\d+)?)\s*%", r"(\1/100)", s)  # "15%" -> "(15/100)"
     s = re.sub(r"\bof\b", "*", s, flags=re.IGNORECASE)  # "15% of 40"
+    s = re.sub(r"(\d+)\s*(?:C|\s+choose\s+)\s*(\d+)", r"binomial(\1, \2)", s)  # "5C2", "5 choose 2"
+    s = re.sub(r"(\d+)\s+mod\s+(\d+)", r"mod(\1, \2)", s, flags=re.IGNORECASE)  # "17 mod 5"
     s = s.replace("==", "=")
     s = re.sub(r"\bsqrt\s*(\d+(?:\.\d+)?)", r"sqrt(\1)", s)  # "sqrt16" -> "sqrt(16)"
     # Drop a trailing "= ?" / "=" / "?" that just means "what is this?"
@@ -101,8 +111,10 @@ def _check_safe(s: str) -> None:
         raise MathInputError("There is no math to work with.")
     if len(s) > MAX_INPUT_LENGTH:
         raise MathInputError("That problem is too long for me to check.")
-    if not re.fullmatch(r"[0-9a-zA-Z+\-*/^().,=<> ]+", s):
+    if not re.fullmatch(r"[0-9a-zA-Z+\-*/^().,=<>! ]+", s):
         raise MathInputError("I found symbols I don't know how to read.")
+    if "!=" in s.replace(" ", "") and not re.search(r"\d!\s+=", s):
+        raise MathInputError("I can check equals, but not 'not equal to' (!=) yet.")
     for word in re.findall(r"[a-zA-Z]+", s):
         if word.lower() not in _ALLOWED_NAMES and len(word) > 2:
             raise MathInputError(f"I'm not sure what '{word}' means here.")
@@ -111,13 +123,22 @@ def _check_safe(s: str) -> None:
             raise MathInputError("That power is too big for me to check.")
 
 
+# evaluate=False doesn't reach function calls, so 5! would still become 120 at once.
+# These wrappers keep them unevaluated, so steps like "5! = 5 × 4 × 3 × 2 × 1" can be shown.
+_UNEVALUATED_NAMES = {
+    **_ALLOWED_NAMES,
+    **{name: (lambda f: lambda *args: f(*args, evaluate=False))(f)
+       for name, f in _ALLOWED_NAMES.items() if f in (sp.factorial, sp.binomial, sp.Mod, sp.floor, sp.ceiling)},
+}
+
+
 def _parse(side: str, evaluate: bool = True) -> sp.Expr:
-    side = side.replace(",", "")  # thousands separators: 1,000 -> 1000
+    side = re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", side)  # thousands separators: 1,000 -> 1000
     if not side.strip():
         raise MathInputError("One side of the problem is empty.")
     try:
-        expr = parse_expr(side, local_dict=dict(_ALLOWED_NAMES), transformations=_TRANSFORMS,
-                          evaluate=evaluate)
+        names = _ALLOWED_NAMES if evaluate else _UNEVALUATED_NAMES
+        expr = parse_expr(side, local_dict=dict(names), transformations=_TRANSFORMS, evaluate=evaluate)
     except Exception as exc:  # SyntaxError, TokenError, TypeError, ...
         raise MathInputError("I couldn't make sense of how this problem is written.") from exc
     if not isinstance(expr, sp.Basic) or isinstance(expr, sp.logic.boolalg.Boolean):
@@ -196,6 +217,27 @@ def _operation_steps(unevaluated: sp.Expr, max_steps: int = 8) -> list[str]:
     def walk(node: sp.Expr) -> sp.Expr:
         if node.is_Number:
             return node
+        if isinstance(node, sp.factorial):
+            n = walk(node.args[0])
+            value = sp.factorial(n)
+            if n.is_Integer and 2 <= n <= 12:
+                expansion = " × ".join(str(k) for k in range(int(n), 0, -1))
+                steps.append(f"{_number(n)}! = {expansion} = {_number(value)}")
+            else:
+                steps.append(f"{_number(n)}! = {_number(value)}")
+            return value
+        if isinstance(node, sp.binomial):
+            n, k = walk(node.args[0]), walk(node.args[1])
+            value = sp.binomial(n, k)
+            steps.append(f"Ways to choose {_number(k)} from {_number(n)}: "
+                         f"{_number(n)}! ÷ ({_number(k)}! × {_number(n - k)}!) = {_number(value)}")
+            return value
+        if isinstance(node, (sp.Mod, sp.floor, sp.ceiling)):
+            args = [walk(a) for a in node.args]
+            value = node.func(*args)
+            shown = {sp.Mod: "Remainder of {} ÷ {}", sp.floor: "Round {} down", sp.ceiling: "Round {} up"}[node.func]
+            steps.append(f"{shown.format(*map(_number, args))} = {_number(value)}")
+            return value
         if isinstance(node, sp.Pow):
             base, exp = walk(node.args[0]), walk(node.args[1])
             if exp == -1:  # a bare reciprocal, as in "1/4": keep it as a fraction
@@ -404,6 +446,7 @@ def _tidy(text: str) -> str:
     text = text.replace("**", "^")
     text = re.sub(r"(?<![\w.])(\d+(?:\.\d+)?)\*(?=[a-z(])", r"\1", text)  # 2*x -> 2x, 3*(x+1) -> 3(x+1)
     text = text.replace(")*(", ")(")
+    text = re.sub(r"factorial\((\w+)\)", r"\1!", text)  # factorial(5) -> 5!
     return text
 
 

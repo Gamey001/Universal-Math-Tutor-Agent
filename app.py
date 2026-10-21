@@ -150,8 +150,8 @@ def render_context_request(turn: dict, state: dict) -> None:
 def render_details(state: dict) -> None:
     attempts = state.get("attempts") or []
     guard = state.get("guard") or {}
-    if not attempts and not guard:
-        return
+    if not (attempts or state.get("math") or guard.get("retried") or guard.get("removed_numbers")):
+        return  # nothing worth showing, e.g. a typed topic question
     with st.expander("How I checked this"):
         for a in attempts:
             if a["error"]:

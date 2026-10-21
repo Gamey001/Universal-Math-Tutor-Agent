@@ -18,6 +18,13 @@ from tutor.math_tool import normalize, solve_problem
     ("-3x <= 9", "x >= -3"),
     ("2 + 2 = 5", "false"),
     ("x + 1 = x + 2", "no solution"),
+    ("what is 5!", "120"),
+    ("5! / 3!", "20"),
+    ("5C2", "10"),
+    ("10 choose 3", "120"),
+    ("17 mod 5", "2"),
+    ("gcd(12, 18)", "6"),
+    ("1,000 + 2,500", "3500"),
 ])
 def test_answers(text, answer):
     result = solve_problem(text)
@@ -53,7 +60,7 @@ def test_solution_is_verified_by_substitution():
 
 @pytest.mark.parametrize("text", [
     "", "hello world", '__import__("os").system("ls")', "2**99999", "x = = 3",
-    "lambda: 1", "a.__class__", "[1, 2]", "1 = 2 = 3",
+    "lambda: 1", "a.__class__", "[1, 2]", "1 = 2 = 3", "5 != 3",
 ])
 def test_rejects_unsafe_or_meaningless_input(text):
     result = solve_problem(text)
@@ -63,3 +70,7 @@ def test_rejects_unsafe_or_meaningless_input(text):
 
 def test_normalize_strips_question_framing():
     assert normalize("What is 3 x 4 = ?") == "3*4"
+
+
+def test_factorial_is_expanded_step_by_step():
+    assert solve_problem("5!").steps == ["5! = 5 × 4 × 3 × 2 × 1 = 120"]

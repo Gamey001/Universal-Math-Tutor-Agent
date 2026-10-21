@@ -70,6 +70,11 @@ TOPICS: tuple[Topic, ...] = (
     Topic("ratios", "Ratios and proportions", ("ratio", "proportion", "rate", "scale"), (
         Proxy("A recipe uses 2 cups of flour for every 3 eggs. How much flour for 9 eggs?", "2/3 * 9"),
     )),
+    Topic("factorials_counting", "Factorials and counting",
+          ("factorial", "permutation", "combination", "arrange", "choose", "counting"), (
+        Proxy("In how many different orders can 4 friends stand in a line for a photo?", "4!"),
+        Proxy("A pizza shop has 5 toppings. How many ways can you pick 2 of them?", "5C2"),
+    )),
     Topic("area_perimeter", "Area and perimeter", ("area", "perimeter", "rectangle", "square", "geometry"), (
         Proxy("A rug is 6 m long and 4 m wide. How much floor does it cover (its area)?", "6 * 4"),
         Proxy("A fence goes all the way around a 6 m by 4 m garden. How long is the fence?", "2 * (6 + 4)"),
@@ -83,7 +88,7 @@ TOPICS: tuple[Topic, ...] = (
 TOPIC_CHOICES: tuple[str, ...] = tuple(
     next(t.name for t in TOPICS if t.key == key)
     for key in ("addition_subtraction", "multiplication_division", "fractions", "decimals", "percentages",
-                "ratios", "order_of_operations", "exponents", "area_perimeter", "linear_equations",
+                "ratios", "order_of_operations", "exponents", "factorials_counting", "area_perimeter", "linear_equations",
                 "inequalities", "quadratics")
 )
 
