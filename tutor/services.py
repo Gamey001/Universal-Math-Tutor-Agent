@@ -27,8 +27,10 @@ class TutorServices(Protocol):
 
     def read_image(self, model: str, image_png: bytes) -> dict: ...
     def transcribe_image(self, model: str, image_png: bytes) -> str: ...
+    def describe_image(self, model: str, image_png: bytes) -> str: ...
     def extract_from_text(self, text: str) -> dict: ...
     def make_proxy(self, topic: str) -> dict: ...
+    def formulate(self, problem: str, diagram: str) -> dict: ...
 
 
 def parse_json(text: str) -> dict:
@@ -68,16 +70,41 @@ def normalize_extraction(raw: dict, default_legibility: str = "unreadable") -> d
     }
 
 
+def _number_or_none(value: Any) -> float | None:
+    try:
+        return float(str(value).replace("°", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_setup(raw: dict) -> dict:
+    """Coerce a formulate() reply into {"unknowns", "equations", "target", "choices"}."""
+    unknowns = []
+    for u in raw.get("unknowns") or []:
+        if isinstance(u, dict) and re.fullmatch(r"[a-z]", _text(u.get("name"))):
+            unknowns.append({"name": _text(u["name"]), "meaning": _text(u.get("meaning"))})
+    equations = []
+    for e in raw.get("equations") or []:
+        # skip placeholders like "a = ?" (the model restating what it's looking for)
+        if isinstance(e, dict) and _text(e.get("equation")) and "?" not in e["equation"]:
+            equations.append({"equation": _text(e["equation"]), "reason": _text(e.get("reason"))})
+    choices = [n for n in (_number_or_none(c) for c in raw.get("choices") or []) if n is not None]
+    return {"unknowns": unknowns, "equations": equations, "target": _text(raw.get("target")), "choices": choices}
+
+
 class OllamaServices:
     def __init__(
         self,
         vision_model: str = config.VISION_MODEL,
         backup_vision_model: str | None = config.BACKUP_VISION_MODEL,
         chat_model: str = config.CHAT_MODEL,
+        reasoning_model: str = config.REASONING_MODEL,
         base_url: str = config.OLLAMA_HOST,
     ):
         self.vision_model = vision_model
         self.backup_vision_model = backup_vision_model
+        self.chat_model = chat_model
+        self.reasoning_model = reasoning_model
         self.base_url = base_url
         self._broken_models: dict[str, str] = {}
         self._chat_json = ChatOllama(model=chat_model, base_url=base_url, format="json", temperature=0)
@@ -108,6 +135,24 @@ class OllamaServices:
 
     def transcribe_image(self, model: str, image_png: bytes) -> str:
         return self._ask_vision(model, prompts.TRANSCRIBE_PROMPT, image_png, json_mode=False).strip()
+
+    def describe_image(self, model: str, image_png: bytes) -> str:
+        return self._ask_vision(model, prompts.DIAGRAM_PROMPT, image_png, json_mode=False).strip()
+
+    def active_reasoning_model(self) -> str:
+        """The reasoning model if it's installed, otherwise the chat model."""
+        installed = installed_models(self.base_url) or set()
+        return self.reasoning_model if self.reasoning_model in installed else self.chat_model
+
+    def formulate(self, problem: str, diagram: str) -> dict:
+        """One independent setup attempt: unknowns, equations with reasons, target, choices."""
+        model = self.active_reasoning_model()
+        thinking = model.startswith("qwen3")  # qwen3 reasons much better with thinking on
+        llm = ChatOllama(model=model, base_url=self.base_url, format="json", temperature=0.6,
+                         reasoning=thinking or None, num_ctx=8192)
+        diagram_block = f"\nWhat the diagram shows:\n{diagram}\n" if diagram else ""
+        data = parse_json(llm.invoke(prompts.FORMULATE_PROMPT.format(problem=problem, diagram=diagram_block)).content)
+        return normalize_setup(data) | {"model": model}
 
     def extract_from_text(self, text: str) -> dict:
         reply = self._chat_json.invoke(prompts.TEXT_EXTRACTION_PROMPT.format(text=text))

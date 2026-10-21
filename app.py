@@ -36,6 +36,7 @@ PROGRESS = {
     "read_backup": "Taking a second, closer look…",
     "read_text": "Reading your question…",
     "solve": "Checking the math with my calculator…",
+    "formulate": "Setting the problem up as equations, twice, to be sure… (this one takes a little longer)",
     "fallback": "Choosing a practice example for us…",
     "ask_context": "Thinking about how best to help…",
     "tutor": "Writing your explanation, one step at a time…",
@@ -150,7 +151,8 @@ def render_context_request(turn: dict, state: dict) -> None:
 def render_details(state: dict) -> None:
     attempts = state.get("attempts") or []
     guard = state.get("guard") or {}
-    if not (attempts or state.get("math") or guard.get("retried") or guard.get("removed_numbers")):
+    if not (attempts or state.get("math") or state.get("setups") or guard.get("retried")
+            or guard.get("removed_numbers")):
         return  # nothing worth showing, e.g. a typed topic question
     with st.expander("How I checked this"):
         for a in attempts:
@@ -165,6 +167,22 @@ def render_details(state: dict) -> None:
                 verdict = "agreed ✔️" if a["agreed"] else "did **not** agree, so I didn't trust the numbers"
                 line += f"; a second independent read (`{a['transcription']}`) {verdict}"
             st.markdown(line)
+        if state.get("diagram"):
+            st.markdown("- What I saw in the diagram:")
+            st.code(state["diagram"], language=None)
+        for i, setup in enumerate(state.get("setups") or [], 1):
+            result = setup.get("result", {})
+            if setup.get("error"):
+                st.markdown(f"- Setup {i} couldn't run: {setup['error'][:160]}")
+            elif result.get("ok"):
+                st.markdown(f"- Setup {i} (`{setup.get('model', '?')}`): {result['answer']}")
+            else:
+                st.markdown(f"- Setup {i} (`{setup.get('model', '?')}`) didn't work out: {result.get('error', '')}")
+        if state.get("setups"):
+            verdict = ("All setups agreed" + (" and the answer matches one of the choices" if any(
+                s.get("choices") for s in state["setups"]) else "") + ", so I trusted it.") \
+                if state.get("setup") else "The setups didn't agree, so I didn't trust any answer."
+            st.markdown(f"- {verdict}")
         if state.get("math"):
             st.markdown("- Every calculation and the answer came from SymPy, not from the AI.")
         if guard.get("retried"):

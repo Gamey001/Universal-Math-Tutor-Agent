@@ -75,7 +75,13 @@ TOPICS: tuple[Topic, ...] = (
         Proxy("In how many different orders can 4 friends stand in a line for a photo?", "4!"),
         Proxy("A pizza shop has 5 toppings. How many ways can you pick 2 of them?", "5C2"),
     )),
-    Topic("area_perimeter", "Area and perimeter", ("area", "perimeter", "rectangle", "square", "geometry"), (
+    Topic("angles_triangles", "Angles and triangles",
+          ("angle", "triangle", "degree", "geometry", "parallel", "vertical", "polygon"), (
+        Proxy("A triangle has angles of 50° and 60°. What is the third angle?", "50 + 60 + x = 180"),
+        Proxy("Two straight roads cross. One of the angles where they meet is 70°. "
+              "What is the angle right next to it?", "70 + x = 180"),
+    )),
+    Topic("area_perimeter", "Area and perimeter", ("area", "perimeter", "rectangle", "square"), (
         Proxy("A rug is 6 m long and 4 m wide. How much floor does it cover (its area)?", "6 * 4"),
         Proxy("A fence goes all the way around a 6 m by 4 m garden. How long is the fence?", "2 * (6 + 4)"),
     )),
@@ -88,7 +94,7 @@ TOPICS: tuple[Topic, ...] = (
 TOPIC_CHOICES: tuple[str, ...] = tuple(
     next(t.name for t in TOPICS if t.key == key)
     for key in ("addition_subtraction", "multiplication_division", "fractions", "decimals", "percentages",
-                "ratios", "order_of_operations", "exponents", "factorials_counting", "area_perimeter", "linear_equations",
+                "ratios", "order_of_operations", "exponents", "factorials_counting", "angles_triangles", "area_perimeter", "linear_equations",
                 "inequalities", "quadratics")
 )
 

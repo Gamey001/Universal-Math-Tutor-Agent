@@ -74,3 +74,9 @@ def test_normalize_strips_question_framing():
 
 def test_factorial_is_expanded_step_by_step():
     assert solve_problem("5!").steps == ["5! = 5 × 4 × 3 × 2 × 1 = 120"]
+
+
+def test_single_equation_with_two_unknowns_is_not_an_answer():
+    result = solve_problem("2x + 3y = 23")
+    assert not result.ok
+    assert "more than one unknown" in result.error

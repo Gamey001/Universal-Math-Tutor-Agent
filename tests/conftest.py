@@ -45,13 +45,15 @@ class FakeServices:
     """Scripted stand-in for OllamaServices. Records every call."""
 
     def __init__(self, reads=None, transcriptions=None, text_extractions=None, proxies=None,
-                 backup=True, tutor_replies=None):
+                 backup=True, tutor_replies=None, setups=None, diagram="A diagram."):
         self.vision_model = "primary"
         self.backup_vision_model = "backup" if backup else None
         self.tutor_llm = FakeListChatModel(responses=tutor_replies or [TUTOR_JSON])
         self._reads = dict(reads or {})
         # By default a transcription agrees with the structured read.
         self._transcriptions = dict(transcriptions or {})
+        self._setups = list(setups or [])
+        self._diagram = diagram
         self._text = list(text_extractions or [])
         self._proxies = list(proxies or [])
         self.calls = []
@@ -70,6 +72,14 @@ class FakeServices:
             return self._transcriptions[model]
         read = self._reads.get(model) or {}
         return read.get("problem_text") or read.get("expression", "")
+
+    def describe_image(self, model, image_png):
+        self.calls.append(("describe_image", model))
+        return self._diagram
+
+    def formulate(self, problem, diagram):
+        self.calls.append(("formulate", problem))
+        return self._setups.pop(0) if self._setups else {"unknowns": [], "equations": [], "target": "", "choices": []}
 
     def extract_from_text(self, text):
         self.calls.append(("extract_from_text", text))

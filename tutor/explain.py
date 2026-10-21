@@ -117,7 +117,7 @@ def _render_answer(answer: str, verification: str, note: str) -> str:
     return "\n\n".join(parts)
 
 
-def explain_solution(llm: BaseChatModel, math: dict, original: str = "") -> Lesson:
+def explain_solution(llm: BaseChatModel, math: dict, original: str = "", legend: list[str] | None = None) -> Lesson:
     """``original`` is the learner's own wording (e.g. "What is 25% of 40?"), which
     gives the tutor far better context than the normalized math alone."""
     steps = math["steps"]
@@ -133,7 +133,8 @@ def explain_solution(llm: BaseChatModel, math: dict, original: str = "") -> Less
     if data["picture"]:
         sections.append(("A picture to hold in your mind", data["picture"]))
     if steps:
-        sections.append(("Step by step", _render_steps(steps, data["step_notes"])))
+        intro = f"Let {'; '.join(legend)}.\n\n" if legend else ""  # what each letter stands for
+        sections.append(("Step by step", intro + _render_steps(steps, data["step_notes"])))
     sections.append(("The answer", _render_answer(math["answer"], math["verification"], data["answer_note"])))
     sections.append(("You've got this", data["encouragement"] or prompts.DEFAULT_ENCOURAGEMENT))
     return Lesson(_markdown(sections), removed, retried)

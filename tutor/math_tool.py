@@ -75,6 +75,7 @@ class MathResult:
     steps: list[str] = field(default_factory=list)
     verification: str = ""
     error: str = ""
+    values: dict[str, str] = field(default_factory=dict)  # system solutions, e.g. {"x": "50"}
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -141,7 +142,8 @@ def _parse(side: str, evaluate: bool = True) -> sp.Expr:
         expr = parse_expr(side, local_dict=dict(names), transformations=_TRANSFORMS, evaluate=evaluate)
     except Exception as exc:  # SyntaxError, TokenError, TypeError, ...
         raise MathInputError("I couldn't make sense of how this problem is written.") from exc
-    if not isinstance(expr, sp.Basic) or isinstance(expr, sp.logic.boolalg.Boolean):
+    # (A plain Symbol is also a Boolean in SymPy, so it's allowed explicitly.)
+    if not isinstance(expr, sp.Basic) or (isinstance(expr, sp.logic.boolalg.Boolean) and not expr.is_Symbol):
         raise MathInputError("That doesn't look like a calculation.")
     return expr
 
@@ -395,6 +397,10 @@ def _solve_relation(lhs_text: str, rel: str, rhs_text: str) -> MathResult:
             verification=f"The statement is {'true' if truth else 'false'}.",
         )
 
+    if len(symbols) > 1:
+        # One equation can't pin down two unknowns ("2x + 3y = 23" alone); word problems
+        # like that go to solve_system with the rest of their equations.
+        raise MathInputError("This has more than one unknown, so I need more information to pin them down.")
     var = _pick_variable(symbols)
 
     if rel != "=":
@@ -500,4 +506,127 @@ def _solve(text: str) -> MathResult:
         answer=sp.sstr(simplified), answer_latex=sp.latex(simplified),
         steps=steps,
         verification="SymPy confirms both forms are equal for every value of the variable.",
+    )
+
+
+MAX_SYSTEM_EQUATIONS = 10
+
+
+def solve_system(equations: list[tuple[str, str]], target: str | None = None) -> MathResult:
+    """Solve several equations together. ``equations`` is [(equation, reason), ...].
+
+    Steps follow how a person would do it: solve whichever equation has a single
+    unknown left, substitute that value everywhere, repeat. Each step carries the
+    reason it's allowed (e.g. "angles in a triangle add up to 180").
+    Only a single, fully determined solution counts as a success.
+    """
+    try:
+        return _tidied(_solve_system(equations, target))
+    except MathInputError as exc:
+        return MathResult(ok=False, error=str(exc))
+    except Exception:
+        return MathResult(ok=False, error="I couldn't check these equations with my calculator.")
+
+
+def _system_steps(parsed: list, solution: dict) -> list[str]:
+    """Human-style steps: solve single-unknown equations first; when every equation
+    still has two or more unknowns, rearrange one and substitute it into the rest."""
+    steps: list[str] = []
+    known: dict = {}  # unknown -> number
+    isolated: list = []  # (unknown, expression in other unknowns), for back-substitution
+    remaining = [(shown, reason, lhs, rhs) for shown, reason, lhs, rhs in parsed]
+
+    while remaining:
+        for i, (shown, reason, lhs, rhs) in enumerate(remaining):
+            free = (lhs - rhs).subs(known).free_symbols
+            if len(free) == 1:
+                var = free.pop()
+                used = [k for k in known if (lhs - rhs).has(k)]
+                note = f" (using {', '.join(f'{k} = {_fmt(known[k])}' for k in used)})" if used else ""
+                known[var] = solution[var]
+                steps.append(f"{reason or 'From the problem'}: {shown}{note} → {var} = {_fmt(solution[var])}")
+                del remaining[i]
+                break
+            if not free:
+                del remaining[i]
+                break
+        else:
+            # Every equation still has 2+ unknowns: isolate the easiest unknown in one of them.
+            candidates = []
+            for i, (shown, reason, lhs, rhs) in enumerate(remaining):
+                diff = sp.expand((lhs - rhs).subs(known))
+                for var in sorted(diff.free_symbols, key=str):
+                    coeff = diff.coeff(var)
+                    if coeff.is_number and coeff != 0 and not (diff - coeff * var).has(var):
+                        candidates.append((abs(coeff) != 1, len(str(diff)), i, var, diff))
+            if not candidates:
+                rest = "; ".join(r[0] for r in remaining)
+                found = ", ".join(f"{k} = {_fmt(v)}" for k, v in solution.items() if k not in known)
+                steps.append(f"Solve these together: {rest} → {found}")
+                return steps
+            _, _, i, var, diff = min(candidates, key=lambda c: c[:2])
+            expr = sp.solve(diff, var)[0]
+            shown, reason = remaining[i][0], remaining[i][1]
+            steps.append(f"{reason or 'From the problem'}: rearrange {shown} → {var} = {sp.sstr(expr)}")
+            isolated.append((var, expr))
+            del remaining[i]
+            swap = f"{var} = {sp.sstr(expr)}"
+            remaining = [(f"{sh}, {swap}" if " using " in sh else f"{sh} using {swap}",
+                          rs, l.subs(var, expr), r.subs(var, expr))
+                         for sh, rs, l, r in remaining]
+
+    for var, expr in reversed(isolated):  # back-substitute what we rearranged
+        value = expr.subs(known)
+        steps.append(f"Put the value{'s' if len(expr.free_symbols) > 1 else ''} back in: "
+                     f"{var} = {sp.sstr(expr)} → {var} = {_fmt(value)}")
+        known[var] = value
+    return steps
+
+
+def _solve_system(equations: list[tuple[str, str]], target: str | None) -> MathResult:
+    if not equations:
+        raise MathInputError("There are no equations to solve.")
+    if len(equations) > MAX_SYSTEM_EQUATIONS:
+        raise MathInputError("That's more equations than I can check at once.")
+
+    parsed = []  # (shown text, reason, lhs, rhs)
+    for text, reason in equations:
+        s = normalize(text)
+        _check_safe(s)
+        lhs_text, rel, rhs_text = _split_relation(s)
+        if rel != "=":
+            raise MathInputError("I can only combine equations that use = for now.")
+        parsed.append((s, reason.strip(), _parse(lhs_text), _parse(rhs_text)))
+
+    symbols = set().union(*(lhs.free_symbols | rhs.free_symbols for _, _, lhs, rhs in parsed))
+    if not symbols:
+        raise MathInputError("These equations have no unknowns to find.")
+    solutions = sp.solve([sp.Eq(lhs, rhs) for _, _, lhs, rhs in parsed], sorted(symbols, key=str), dict=True)
+    if not solutions:
+        raise MathInputError("These equations contradict each other, so something was set up wrong.")
+    if len(solutions) > 1:
+        raise MathInputError("These equations allow more than one answer, so something is missing.")
+    solution = solutions[0]
+    if set(solution) != symbols or any(v.free_symbols for v in solution.values()):
+        raise MathInputError("There isn't enough information to pin down every unknown.")
+
+    steps = _system_steps(parsed, solution)
+
+    checks = all(sp.simplify(lhs.subs(solution) - rhs.subs(solution)) == 0 for _, _, lhs, rhs in parsed)
+    if not checks:
+        raise MathInputError("The solution didn't check out when I put it back in.")
+    values = {str(k): _fmt(v) for k, v in solution.items()}
+    target_sym = next((k for k in solution if str(k) == target), None)
+    shown_vars = [target_sym] if target_sym is not None else sorted(solution, key=str)
+    answer = ", ".join(f"{k} = {_fmt(solution[k])}" for k in shown_vars)
+    return MathResult(
+        ok=True, kind="system",
+        problem="; ".join(s for s, _, _, _ in parsed),
+        problem_latex=r"\\ ".join(f"{sp.latex(lhs)} = {sp.latex(rhs)}" for _, _, lhs, rhs in parsed),
+        answer=answer,
+        answer_latex=r",\quad ".join(f"{sp.latex(k)} = {sp.latex(solution[k])}" for k in shown_vars),
+        steps=steps,
+        verification=f"Putting {', '.join(f'{k} = {v}' for k, v in values.items())} back in, "
+                     f"all {len(parsed)} equations balance.",
+        values=values,
     )

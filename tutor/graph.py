@@ -2,9 +2,12 @@
 
     image ─► precheck ─┬─ blank/unopenable ─────────────────────────► ask_context
                        └─► read_primary ─┬─ clear & confirmed ──────► solve ──► tutor
+                                         ├─ clear word/diagram ─────► formulate
                                          └─► read_backup ─┐
     text ──► read_text ───────────────────────────────────┤
                                                           ├─ clear & confirmed ► solve ──► tutor
+                                                          ├─ word/diagram ─────► formulate ─┬─ setups agree ► tutor
+                                                          │                                 └─► fallback / ask_context
                                                           ├─ topic known ──────► fallback ► tutor
                                                           └─ nothing usable ───► ask_context
     topic ─────────────────────────────────────────────────────────► fallback ► tutor
@@ -12,6 +15,11 @@
 A photo only counts as "clear" when two independent reads agree on its
 numbers (a structured read and a plain transcription), because small
 vision models will confidently invent numbers for blurry photos.
+
+Word and diagram problems have no single expression to solve. ``formulate``
+asks the reasoning model for equations (each with its reason) several times
+independently; SymPy solves each setup, and the answer is only trusted when
+every setup reaches the same value (and it matches an answer choice, if any).
 
 ``ask_context`` ends the run with a question for the learner. Their answer
 comes back as a new run with ``text`` (a typed problem or topic) or
@@ -31,7 +39,9 @@ from langgraph.graph import END, START, StateGraph
 from . import config, prompts
 from .explain import explain_solution, explain_topic
 from .images import detect_image_issue, prepare_for_model
-from .math_tool import normalize, solve_problem
+import sympy as sp
+
+from .math_tool import normalize, solve_problem, solve_system
 from .services import OllamaServices, TutorServices, normalize_extraction
 from .topics import match_topic, pick_proxy
 
@@ -54,6 +64,9 @@ class TutorState(TypedDict, total=False):
     message: str  # the question shown when status == "needs_context"
     explanation: str
     guard: dict  # what the number guard did to the tutor's prose
+    diagram: str  # the vision model's description of a diagram, for word/diagram problems
+    setups: list[dict]  # every independent setup attempt and its SymPy result
+    setup: dict  # the agreed setup that produced ``math``
 
 
 class ServiceUnavailable(RuntimeError):
@@ -85,6 +98,36 @@ def can_solve(extraction: dict | None) -> bool:
     if extraction.get("confidence", 0) < config.MIN_CONFIDENCE:
         return False
     return solve_problem(extraction["expression"]).ok
+
+
+def needs_setup(extraction: dict | None) -> bool:
+    """A clearly read, specific problem with no directly solvable expression (word or diagram problem)."""
+    if not extraction or extraction.get("legibility") != "clear":
+        return False
+    if not extraction.get("problem_text") or not extraction.get("specific", True):
+        return False
+    return not can_solve(extraction)
+
+
+def _as_number(value: str) -> float | None:
+    try:  # values come from our own math tool, e.g. "7/8 (about 0.875)"
+        return float(sp.N(sp.sympify(value.split(" (")[0])))
+    except Exception:
+        return None
+
+
+def agreed_setup(setups: list[dict]) -> dict | None:
+    """The setup to trust, or None. Every attempt must succeed and agree on the target's value,
+    and that value must match an answer choice when the problem has choices."""
+    if not setups or any(not s.get("result", {}).get("ok") for s in setups):
+        return None
+    targets = [_as_number(s["result"]["values"].get(s["target"], "")) for s in setups]
+    if any(t is None for t in targets) or any(abs(t - targets[0]) > 1e-9 for t in targets):
+        return None
+    choices = [c for s in setups for c in s.get("choices", [])]
+    if choices and not any(abs(c - targets[0]) < 1e-6 for c in choices):
+        return None
+    return setups[0]
 
 
 def _rank(extraction: dict) -> tuple:
@@ -170,13 +213,40 @@ def build_graph(services: TutorServices | None = None):
             except Exception as exc:
                 raise ServiceUnavailable(str(exc)) from exc
             extraction = {"legibility": "clear", "problem_text": parsed["problem_text"] or text,
-                          "expression": parsed["expression"], "topic": parsed["topic"], "confidence": 1.0}
+                          "expression": parsed["expression"], "topic": parsed["topic"], "confidence": 1.0,
+                          # a topic request ("I don't get fractions") has neither of these
+                          "specific": bool(parsed["problem_text"] or parsed["expression"])}
         return {"source": "text", "extraction": extraction}
 
     def solve(state: TutorState) -> dict:
         extraction = state["extraction"]
         result = solve_problem(extraction["expression"])
         return {"status": "solved", "math": result.to_dict(), "topic": extraction.get("topic", "")}
+
+    def formulate(state: TutorState) -> dict:
+        extraction = state["extraction"]
+        diagram = ""
+        if state.get("source") == "image":
+            try:
+                diagram = services.describe_image(services.vision_model, prepare_for_model(state["image"]))
+            except Exception:
+                pass
+        setups = []
+        for _ in range(config.SETUP_ATTEMPTS):
+            try:
+                setup = services.formulate(extraction["problem_text"], diagram)
+            except Exception as exc:
+                setups.append({"error": str(exc), "result": {"ok": False}})
+                continue
+            result = solve_system([(e["equation"], e["reason"]) for e in setup["equations"]],
+                                  setup["target"] or None)
+            setups.append({**setup, "result": result.to_dict()})
+        update = {"diagram": diagram, "setups": setups}
+        chosen = agreed_setup(setups)
+        if chosen:
+            update.update(status="solved", math=chosen["result"], setup=chosen,
+                          topic=extraction.get("topic", ""))
+        return update
 
     def fallback(state: TutorState) -> dict:
         extraction = state.get("extraction") or {}
@@ -187,7 +257,7 @@ def build_graph(services: TutorServices | None = None):
 
         if source == "image" and extraction.get("legibility") != "clear":
             situation = "blurry"
-        elif source in ("image", "text") and extraction.get("expression"):
+        elif source in ("image", "text") and (extraction.get("expression") or state.get("setups")):
             situation = "uncheckable"
         else:
             situation = "topic"
@@ -223,8 +293,12 @@ def build_graph(services: TutorServices | None = None):
 
     def tutor(state: TutorState) -> dict:
         if state["status"] == "solved":
-            lesson = explain_solution(services.tutor_llm, state["math"],
-                                      state.get("extraction", {}).get("problem_text", ""))
+            original = state.get("extraction", {}).get("problem_text", "")
+            if state.get("diagram"):
+                original += "\n" + state["diagram"]
+            legend = [f"{u['name']} = {u['meaning']}" for u in (state.get("setup") or {}).get("unknowns", [])
+                      if u.get("meaning")]
+            lesson = explain_solution(services.tutor_llm, state["math"], original, legend)
         else:
             invitation = {"blurry": prompts.INVITE_RETAKE, "uncheckable": prompts.INVITE_REWRITE,
                           "topic": prompts.INVITE_SPECIFIC}[state["situation"]]
@@ -248,27 +322,37 @@ def build_graph(services: TutorServices | None = None):
         return "ask_context" if state.get("image_issue") else "read_primary"
 
     def after_primary(state: TutorState) -> str:
-        return "solve" if can_solve(state["extraction"]) else "read_backup"
+        if can_solve(state["extraction"]):
+            return "solve"
+        return "formulate" if needs_setup(state["extraction"]) else "read_backup"
 
     def after_read(state: TutorState) -> str:
         extraction = state["extraction"]
         if can_solve(extraction):
             return "solve"
+        if needs_setup(extraction):
+            return "formulate"
         if extraction.get("topic"):
             return "fallback"
         return "ask_context"
 
+    def after_formulate(state: TutorState) -> str:
+        if state.get("status") == "solved":
+            return "tutor"
+        return "fallback" if state["extraction"].get("topic") else "ask_context"
+
     graph = StateGraph(TutorState)
     for name, node in [("precheck", precheck), ("read_primary", read_primary), ("read_backup", read_backup),
-                       ("read_text", read_text), ("solve", solve), ("fallback", fallback),
+                       ("read_text", read_text), ("solve", solve), ("formulate", formulate), ("fallback", fallback),
                        ("ask_context", ask_context), ("tutor", tutor)]:
         graph.add_node(name, node)
 
     graph.add_conditional_edges(START, route_start, ["precheck", "fallback", "read_text", "ask_context"])
     graph.add_conditional_edges("precheck", after_precheck, ["ask_context", "read_primary"])
-    graph.add_conditional_edges("read_primary", after_primary, ["solve", "read_backup"])
-    graph.add_conditional_edges("read_backup", after_read, ["solve", "fallback", "ask_context"])
-    graph.add_conditional_edges("read_text", after_read, ["solve", "fallback", "ask_context"])
+    graph.add_conditional_edges("read_primary", after_primary, ["solve", "formulate", "read_backup"])
+    graph.add_conditional_edges("read_backup", after_read, ["solve", "formulate", "fallback", "ask_context"])
+    graph.add_conditional_edges("read_text", after_read, ["solve", "formulate", "fallback", "ask_context"])
+    graph.add_conditional_edges("formulate", after_formulate, ["tutor", "fallback", "ask_context"])
     graph.add_edge("solve", "tutor")
     graph.add_edge("fallback", "tutor")
     graph.add_edge("tutor", END)

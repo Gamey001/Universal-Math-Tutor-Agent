@@ -143,3 +143,33 @@ ASK_CONTEXT_FOLLOW_UP = ("Could you tell me which area of math you'd like help w
 TRANSCRIBE_PROMPT = ("Transcribe the math written in this image exactly, character by character, on one line. "
                      "If any character is too blurry to read with certainty, write UNREADABLE instead. "
                      "Output nothing else.")
+
+
+DIAGRAM_PROMPT = """Describe this math problem completely, so that someone who cannot see the image could solve it.
+Include, as short plain-text lines:
+- The question, word for word.
+- Every labelled point.
+- Which points are joined by straight segments, and where segments cross (at which labelled point).
+- Every marked angle: its vertex, the two points it sits between, and its value or variable.
+- Any lengths, labels or markings (equal-length ticks, parallel arrows, right-angle squares).
+- Any answer choices, with their letters.
+Only describe what is actually drawn. If you are unsure about something, say "unclear". Do not solve it."""
+
+
+FORMULATE_PROMPT = """Set up this math problem as equations. A calculator will solve them; you only write the setup.
+
+Problem:
+{problem}
+{diagram}
+Reply with ONLY a JSON object:
+"unknowns": a list of {{"name": a single lowercase letter, "meaning": what it stands for in words}}.
+            Include the quantity the question asks for, plus any helper unknowns you need.
+"equations": a list of {{"equation": one equation using = (use * for times, ^ for powers, only numbers and
+             the single-letter unknown names), "reason": the math fact or problem sentence that justifies it,
+             in plain words}}. Write exactly as many independent equations as unknowns.
+"target": the name of the unknown the question asks for.
+"choices": the answer choices as plain numbers (e.g. [25, 35, 45, 50]), or [] if there are none.
+
+Rules: every equation must follow from a stated fact in the problem or a standard math rule
+(e.g. "angles in a triangle add up to 180", "vertically opposite angles are equal").
+Do not solve the equations and do not put the answer in them."""

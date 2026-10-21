@@ -11,6 +11,10 @@ VISION_MODEL = os.getenv("TUTOR_VISION_MODEL", "qwen2.5vl:7b")
 BACKUP_VISION_MODEL = os.getenv("TUTOR_BACKUP_VISION_MODEL", "qwen2.5vl:3b")
 # Writes the explanations, proxy problems, and parses typed questions.
 CHAT_MODEL = os.getenv("TUTOR_CHAT_MODEL", "llama3.1:latest")
+# Turns word and diagram problems into equations for SymPy. Falls back to CHAT_MODEL if not installed.
+REASONING_MODEL = os.getenv("TUTOR_REASONING_MODEL", "qwen3:30b-a3b")
+# Independent setups that must agree before a word/diagram answer is trusted.
+SETUP_ATTEMPTS = int(os.getenv("TUTOR_SETUP_ATTEMPTS", "2"))
 
 # Below this self-reported confidence, extracted numbers are not trusted enough to solve.
 MIN_CONFIDENCE = float(os.getenv("TUTOR_MIN_CONFIDENCE", "0.6"))
