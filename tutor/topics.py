@@ -1,0 +1,106 @@
+"""Known math topics, with ready-made proxy problems.
+
+When a photo is too blurry to read the exact numbers, the tutor teaches the
+same idea with a clean "proxy" problem. Proxies for known topics come from
+here (fast and predictable); every proxy is still verified by the math tool.
+"""
+
+from __future__ import annotations
+
+import random
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Proxy:
+    problem_text: str
+    expression: str
+
+
+@dataclass(frozen=True)
+class Topic:
+    key: str
+    name: str
+    keywords: tuple[str, ...]
+    proxies: tuple[Proxy, ...]
+
+
+TOPICS: tuple[Topic, ...] = (
+    Topic("fractions", "Fractions", ("fraction", "numerator", "denominator", "half", "quarter"), (
+        Proxy("You eat 1/4 of a pizza, and your friend eats 1/8. How much of the pizza is gone?", "1/4 + 1/8"),
+        Proxy("A jug is 2/3 full. You pour out 1/6 of the jug. How full is it now?", "2/3 - 1/6"),
+    )),
+    Topic("percentages", "Percentages", ("percent", "%", "discount", "interest"), (
+        Proxy("A $40 shirt is 25% off. How many dollars do you save?", "25% of 40"),
+        Proxy("You answered 18 out of 20 questions correctly. What percent is that?", "18/20 * 100"),
+    )),
+    Topic("decimals", "Decimals", ("decimal", "point", "tenth", "hundredth"), (
+        Proxy("An apple costs $0.75 and a banana costs $0.40. How much for both?", "0.75 + 0.40"),
+    )),
+    Topic("quadratics", "Quadratic equations", ("quadratic", "squared", "parabola", "factoring", "factorising"), (
+        Proxy("A square garden has an area of 49 square meters. How long is each side?", "x^2 = 49"),
+        Proxy("Find the numbers x that make x² − 5x + 6 equal to zero.", "x^2 - 5x + 6 = 0"),
+    )),
+    Topic("linear_equations", "Solving for an unknown (linear equations)",
+          ("linear", "equation", "solve for", "solving for", "for x", "unknown", "variable", "algebra"), (
+        Proxy("A mystery bag of marbles, doubled, plus 3 loose marbles, makes 11. How many marbles are in the bag?",
+              "2x + 3 = 11"),
+        Proxy("Three equal boxes of crayons and 4 extra crayons make 19 crayons. How many are in each box?",
+              "3x + 4 = 19"),
+    )),
+    Topic("inequalities", "Inequalities", ("inequalit", "greater than", "less than"), (
+        Proxy("You have $20 and each comic costs $4. You also want to keep at least $4. "
+              "How many comics (x) could you buy?", "4x + 4 <= 20"),
+    )),
+    Topic("exponents", "Exponents and powers", ("exponent", "power", "squared", "cube", "indices"), (
+        Proxy("A bacteria colony doubles every hour. Starting from 1, how many are there after 5 hours?", "2^5"),
+    )),
+    Topic("order_of_operations", "Order of operations", ("order of operations", "bodmas", "pemdas", "brackets"), (
+        Proxy("You buy 3 packs of 4 stickers and get 2 bonus stickers. How many stickers?", "3 * 4 + 2"),
+    )),
+    Topic("multiplication_division", "Multiplication and division",
+          ("multipl", "times", "divi", "product", "quotient", "share"), (
+        Proxy("24 cookies are shared equally among 6 friends. How many does each friend get?", "24 / 6"),
+        Proxy("There are 7 rows of chairs with 8 chairs in each row. How many chairs?", "7 * 8"),
+    )),
+    Topic("addition_subtraction", "Addition and subtraction",
+          ("addition", "subtract", "sum", "difference", "plus", "minus", "arithmetic"), (
+        Proxy("You have 15 stickers and get 27 more. How many stickers now?", "15 + 27"),
+    )),
+    Topic("ratios", "Ratios and proportions", ("ratio", "proportion", "rate", "scale"), (
+        Proxy("A recipe uses 2 cups of flour for every 3 eggs. How much flour for 9 eggs?", "2/3 * 9"),
+    )),
+    Topic("area_perimeter", "Area and perimeter", ("area", "perimeter", "rectangle", "square", "geometry"), (
+        Proxy("A rug is 6 m long and 4 m wide. How much floor does it cover (its area)?", "6 * 4"),
+        Proxy("A fence goes all the way around a 6 m by 4 m garden. How long is the fence?", "2 * (6 + 4)"),
+    )),
+)
+
+# Order matters in match_topic: specific topics (quadratics) come before
+# broader ones (linear equations) that share keywords like "equation".
+
+# Shown as quick-pick buttons when the tutor asks the learner for context, gentlest first.
+TOPIC_CHOICES: tuple[str, ...] = tuple(
+    next(t.name for t in TOPICS if t.key == key)
+    for key in ("addition_subtraction", "multiplication_division", "fractions", "decimals", "percentages",
+                "ratios", "order_of_operations", "exponents", "area_perimeter", "linear_equations",
+                "inequalities", "quadratics")
+)
+
+
+def match_topic(raw: str | None) -> Topic | None:
+    """Map free text from a model or a learner ("solving for x") onto a known topic."""
+    if not raw:
+        return None
+    text = raw.lower()
+    for topic in TOPICS:
+        if topic.name.lower() == text or topic.key == text:
+            return topic
+    for topic in TOPICS:
+        if any(word in text for word in topic.keywords):
+            return topic
+    return None
+
+
+def pick_proxy(topic: Topic, rng: random.Random | None = None) -> Proxy:
+    return (rng or random).choice(topic.proxies)

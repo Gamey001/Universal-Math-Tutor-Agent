@@ -1,0 +1,145 @@
+"""All prompt text in one place, so the tutor's voice can be tuned without touching the graph."""
+
+VISION_PROMPT = """You are reading a photo of a math problem for a tutoring app.
+Look carefully at the image and reply with ONLY a JSON object with these keys:
+
+"legibility": "clear" if you can read every number and symbol of the problem with certainty,
+              "partial" if the photo is blurry, smudged or cut off so you cannot be sure of the exact numbers,
+              "unreadable" if you cannot read any of it.
+"problem_text": the problem exactly as written, word for word ("" if unreadable).
+"expression": the problem rewritten as ONE plain-text calculation, equation or inequality,
+              using * for times, / for divide, ^ for powers, and = for equals,
+              copying the numbers exactly as they appear in the photo.
+              Use "" if the numbers are not clear or there is no calculation.
+"topic": the area of math this belongs to (a few words, such as the name of a school math topic).
+         Fill this in even when the numbers are unreadable, if you can tell what kind of problem it is.
+         Use "" if you cannot tell or there is no math in the image.
+"confidence": a number from 0 to 1: how sure you are that "expression" matches the photo exactly.
+
+Do not solve the problem. Never guess or invent numbers you cannot see clearly:
+if the image is blurry, say "partial" or "unreadable" and leave "expression" empty."""
+
+
+TEXT_EXTRACTION_PROMPT = """A learner typed this message to a math tutor:
+
+\"\"\"{text}\"\"\"
+
+Reply with ONLY a JSON object with these keys:
+"expression": if the message contains a specific problem with numbers, write it as ONE plain-text
+              calculation, equation or inequality using * / ^ and = (e.g. "2*x + 3 = 11", "24 / 6",
+              "25% of 40"). For a word problem, translate the words into that calculation. Otherwise "".
+"topic": the area of math the learner is asking about (e.g. "fractions", "linear equations",
+         "percentages"), or "" if the message is not about math at all or is too vague to tell.
+"problem_text": the problem in clean words, or "" if there is no specific problem.
+
+Do not solve anything."""
+
+
+PROXY_PROMPT = """Write ONE short, friendly practice problem for a nervous beginner on this math topic: "{topic}".
+Use small, friendly numbers and an everyday situation.
+Reply with ONLY a JSON object:
+"problem_text": the practice problem in words.
+"expression": the same problem as ONE plain-text calculation or equation using * / ^ and =,
+              e.g. "2*x + 3 = 11" or "3/4 + 1/8". It must have a single clear answer.
+Do not solve it."""
+
+
+TUTOR_SYSTEM_PROMPT = """You are a calm, encouraging, world-class math mentor for people who feel anxious about math.
+
+How you teach:
+- Go slowly. Short sentences. One idea at a time.
+- Put understanding and real-life use first. Avoid jargon; if a math word is truly needed, explain it right away in plain words.
+- Use exactly ONE universally understood analogy (sharing food, slicing a pizza, balancing a scale, grouping objects into bags...) and connect each step back to it.
+- Never call anything "easy", "simple", "obvious", or say "just". Never make the learner feel slow.
+- Celebrate effort, not speed.
+
+Accuracy rule (very important):
+- A calculator has already done all the math. The app shows the learner every verified calculation itself.
+- You write ONLY the plain-language words around that math: the meaning, the analogy, the "why".
+- Never calculate anything, never count, never write any number that is not in the verified material you are given.
+- Any question you ask the learner must be about ideas ("why do we do the same thing to both sides?"), never a new calculation.
+
+Always reply with ONLY a JSON object, exactly in the shape you are asked for."""
+
+
+SOLVE_REQUEST = """The learner's problem, in their words: {original}
+As math: {problem}
+Verified answer: {answer}
+Verified steps, in order:
+{steps}
+
+Reply with ONLY a JSON object with these keys:
+"asking": 1-2 sentences: what the question is asking, in plain words.
+"picture": 2-4 sentences: your ONE everyday analogy for this problem, using only numbers that appear in the problem.
+"step_notes": a list of exactly {n} strings, one per verified step above, in the same order. Each is 1-2 sentences \
+explaining WHY that step makes sense, linked to your analogy. Don't repeat the calculation; don't write new numbers.
+"answer_note": one sentence on what the answer means in your analogy.
+"encouragement": 2-3 warm sentences, ending with one reflective question about the idea (not a new calculation)."""
+
+
+FALLBACK_REQUEST = """The learner wants to understand this math topic: {topic}
+{context}
+{proxy_block}
+Reply with ONLY a JSON object with these keys:
+"big_idea": 3-5 sentences explaining the core idea of {topic} in plain words with ONE everyday analogy. \
+Do not use any digits.
+{proxy_keys}"encouragement": 2-3 warm sentences, ending with one reflective question about the idea (not a calculation)."""
+
+FALLBACK_PROXY_BLOCK = """We'll practice with this problem instead:
+Practice problem: {problem_text}
+Verified answer: {answer}
+Verified steps, in order:
+{steps}
+"""
+
+FALLBACK_PROXY_KEYS = """"step_notes": a list of exactly {n} strings, one per verified step above, in the same order. Each is \
+1-2 sentences explaining WHY that step makes sense, linked to your analogy. Don't repeat the calculation; don't write new numbers.
+"answer_note": one sentence on what the practice answer means in your analogy.
+"""
+
+FALLBACK_CONTEXT_UNCHECKABLE = ("Their exact problem could not be checked by the calculator, "
+                                "so do NOT try to solve it or mention its answer.")
+
+RETRY_NUMBERS = ("Your reply used numbers that are not in the verified material: {numbers}. "
+                 "Rewrite the same JSON without those numbers. Describe ideas in words instead of calculating.")
+
+
+# Shown to the learner verbatim (not written by the model) so the tone is always right.
+WHAT_HAPPENED = {
+    "blurry": ("Your photo was a little too blurry for me to read the exact numbers, and I'd rather not guess "
+               "and teach you something wrong. I could tell it's about **{topic}**, though, so let's learn the "
+               "idea together with a practice problem."),
+    "uncheckable": ("I couldn't check that exact problem with my calculator, and I'd rather not risk giving you "
+                    "a wrong answer. Let's explore the idea behind it, **{topic}**, with a practice problem instead."),
+    "topic": "Let's explore **{topic}** together, one small step at a time.",
+}
+
+INVITE_RETAKE = ("Whenever you're ready, try another photo in good light, or type the problem out, "
+                 "and we'll work through yours together.")
+INVITE_SPECIFIC = "Whenever you'd like, type a specific problem and we'll work through it together."
+INVITE_REWRITE = ("If you type your problem again in a simpler form (for example *2x + 3 = 11*), "
+                  "I can check it with my calculator and we'll go through it together.")
+
+DEFAULT_ASKING = "Let's work through this together, one small step at a time."
+DEFAULT_ENCOURAGEMENT = ("You stuck with it, and that's what matters most. "
+                         "Come back to any step whenever you like; there's no rush.")
+
+
+ASK_CONTEXT_MESSAGES = {
+    "blank": ("I looked closely, but this photo seems to be blank or completely blurred, "
+              "so I couldn't find any math on it. That happens to everyone, no worries at all!"),
+    "unopenable": ("I wasn't able to open that file as a picture. "
+                   "It might be in a format I don't understand. No harm done!"),
+    "unreadable": ("I looked at your photo carefully (twice, actually!), but I couldn't make out "
+                   "the problem or tell what kind of math it is. That's okay, photos can be tricky."),
+    "text": ("I'd love to help, but I'm not quite sure which part of math you'd like to explore yet."),
+}
+
+ASK_CONTEXT_FOLLOW_UP = ("Could you tell me which area of math you'd like help with, or type the problem out? "
+                         "For example: *fractions*, *solving for x*, or *3/4 + 1/8*. "
+                         "You can also pick a topic below.")
+
+
+TRANSCRIBE_PROMPT = ("Transcribe the math written in this image exactly, character by character, on one line. "
+                     "If any character is too blurry to read with certainty, write UNREADABLE instead. "
+                     "Output nothing else.")
