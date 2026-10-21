@@ -203,7 +203,10 @@ def input_area() -> None:
     with photo_tab:
         uploaded = st.file_uploader("A photo of your math problem (handwritten or printed)",
                                     type=["png", "jpg", "jpeg", "webp"], key="uploader")
-        with st.expander("Use your camera instead"):
+        # camera_input turns the camera on as soon as it renders (even in a collapsed
+        # expander), so only render it once the learner opts in.
+        snapped = None
+        if st.toggle("Use my camera instead", key="use-camera"):
             snapped = st.camera_input("Take a picture", key="camera", label_visibility="collapsed")
         image = snapped or uploaded
         if st.button("Help me understand this", type="primary", disabled=image is None, key="go-photo"):
