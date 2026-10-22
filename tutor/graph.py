@@ -101,6 +101,22 @@ def can_solve(extraction: dict | None) -> bool:
     return solve_problem(extraction["expression"]).ok
 
 
+_LINE_LABEL = re.compile(r"^\s*(?:solution|question|problem|task|exercise|q\d*|\d+[.)])\s*[:.)\-]?\s*", re.IGNORECASE)
+
+
+def problem_lines(text: str, limit: int = 4) -> list[str]:
+    """The first few written lines, without labels like "Solution:" or "1)".
+
+    A photo of a worked solution has no single "expression" for a model to fill in,
+    but the problem is almost always written first: "Solution: ∫x³·ln(x³+1) dx"."""
+    lines = []
+    for raw in (text or "").splitlines()[:8]:
+        line = _LINE_LABEL.sub("", raw).strip()
+        if line and not re.match(r"step\b", line, re.IGNORECASE):
+            lines.append(line)
+    return lines[:limit]
+
+
 def _is_bare_expression(expression: str, problem_text: str) -> bool:
     """An expression with a variable but no question (no =, not calculus, no 'simplify/expand/factor')."""
     if not expression:
@@ -160,6 +176,13 @@ def build_graph(services: TutorServices | None = None):
 
         # A clear word problem may come back without a usable expression; let the
         # chat model translate the words. (Never for blurry reads: numbers would be guesses.)
+        if (extraction["legibility"] == "clear" and extraction["problem_text"]
+                and not solve_problem(extraction["expression"]).ok):
+            # First, deterministically: is one of the first written lines the problem itself?
+            for line in problem_lines(extraction["problem_text"]):
+                if solve_problem(line).ok and not _is_bare_expression(line, extraction["problem_text"]):
+                    extraction["expression"] = line
+                    break
         if (extraction["legibility"] == "clear" and extraction["problem_text"]
                 and not solve_problem(extraction["expression"]).ok):
             try:
