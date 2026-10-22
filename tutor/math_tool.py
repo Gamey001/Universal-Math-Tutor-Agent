@@ -567,7 +567,11 @@ def _system_steps(parsed: list, solution: dict) -> list[str]:
             _, _, i, var, diff = min(candidates, key=lambda c: c[:2])
             expr = sp.solve(diff, var)[0]
             shown, reason = remaining[i][0], remaining[i][1]
-            steps.append(f"{reason or 'From the problem'}: rearrange {shown} → {var} = {sp.sstr(expr)}")
+            lhs_i, rhs_i = remaining[i][2], remaining[i][3]
+            if lhs_i == var and not rhs_i.has(var):  # already "m = 3s": nothing to rearrange
+                steps.append(f"{reason or 'From the problem'}: {shown}")
+            else:
+                steps.append(f"{reason or 'From the problem'}: rearrange {shown} → {var} = {sp.sstr(expr)}")
             isolated.append((var, expr))
             del remaining[i]
             swap = f"{var} = {sp.sstr(expr)}"

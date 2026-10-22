@@ -30,7 +30,7 @@ class TutorServices(Protocol):
     def describe_image(self, model: str, image_png: bytes) -> str: ...
     def extract_from_text(self, text: str) -> dict: ...
     def make_proxy(self, topic: str) -> dict: ...
-    def formulate(self, problem: str, diagram: str) -> dict: ...
+    def formulate(self, problem: str, diagram: str, think: bool = False) -> dict: ...
 
 
 def parse_json(text: str) -> dict:
@@ -77,19 +77,59 @@ def _number_or_none(value: Any) -> float | None:
         return None
 
 
+_IDENTIFIER = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+# Function names the math tool understands; never renamed.
+_KEEP_NAMES = {"sqrt", "sin", "cos", "tan", "log", "ln", "exp", "abs", "pi", "factorial", "binomial",
+               "gcd", "lcm", "floor", "ceiling", "ceil", "mod"}
+
+
 def normalize_setup(raw: dict) -> dict:
-    """Coerce a formulate() reply into {"unknowns", "equations", "target", "choices"}."""
-    unknowns = []
+    """Coerce a formulate() reply into {"unknowns", "equations", "target", "choices"}.
+
+    Models like descriptive names ("angle_PMQ", "apples"); the math tool only accepts
+    single letters (anything longer could be read as implicit multiplication). So
+    names are mapped to unused single letters here, keeping the name as the meaning.
+    """
+    meanings = {}
     for u in raw.get("unknowns") or []:
-        if isinstance(u, dict) and re.fullmatch(r"[a-z]", _text(u.get("name"))):
-            unknowns.append({"name": _text(u["name"]), "meaning": _text(u.get("meaning"))})
+        if isinstance(u, dict) and _text(u.get("name")):
+            meanings[_text(u["name"]).replace(" ", "_")] = _text(u.get("meaning"))
     equations = []
     for e in raw.get("equations") or []:
         # skip placeholders like "a = ?" (the model restating what it's looking for)
         if isinstance(e, dict) and _text(e.get("equation")) and "?" not in e["equation"]:
-            equations.append({"equation": _text(e["equation"]), "reason": _text(e.get("reason"))})
+            text = _text(e["equation"])
+            for name in sorted(meanings, key=len, reverse=True):  # "angle PMQ" -> "angle_PMQ"
+                if "_" in name:
+                    text = text.replace(name.replace("_", " "), name)
+            equations.append({"equation": text, "reason": _text(e.get("reason"))})
+
+    names = []
+    for e in equations:
+        for name in _IDENTIFIER.findall(e["equation"]):
+            if name.lower() not in _KEEP_NAMES and name not in names:
+                names.append(name)
+    used = {n for n in names if re.fullmatch(r"[a-z]", n)}
+    pool = [c for c in "xyzabcdfghjkmnpqrstuvw" if c not in used]
+    rename = {}
+    for name in names:
+        if not re.fullmatch(r"[a-z]", name):
+            if not pool:
+                return {"unknowns": [], "equations": [], "target": "", "choices": []}  # too many unknowns
+            rename[name] = pool.pop(0)
+
+    def apply(text: str) -> str:
+        return _IDENTIFIER.sub(lambda m: rename.get(m.group(0), m.group(0)), text)
+
+    for e in equations:
+        e["equation"] = apply(e["equation"])
+    unknowns = []
+    for name in names:
+        meaning = meanings.get(name) or name.replace("_", " ")
+        unknowns.append({"name": rename.get(name, name), "meaning": meaning})
+    target = _text(raw.get("target")).replace(" ", "_")
     choices = [n for n in (_number_or_none(c) for c in raw.get("choices") or []) if n is not None]
-    return {"unknowns": unknowns, "equations": equations, "target": _text(raw.get("target")), "choices": choices}
+    return {"unknowns": unknowns, "equations": equations, "target": rename.get(target, target), "choices": choices}
 
 
 class OllamaServices:
@@ -107,9 +147,12 @@ class OllamaServices:
         self.reasoning_model = reasoning_model
         self.base_url = base_url
         self._broken_models: dict[str, str] = {}
-        self._chat_json = ChatOllama(model=chat_model, base_url=base_url, format="json", temperature=0)
+        no_think = False if chat_model.startswith("qwen3") else None  # quick replies; no thinking needed
+        self._chat_json = ChatOllama(model=chat_model, base_url=base_url, format="json", temperature=0,
+                                     reasoning=no_think)
         # JSON mode: the tutor only writes prose fields; explain.py inserts all the math.
-        self.tutor_llm = ChatOllama(model=chat_model, base_url=base_url, format="json", temperature=0.4)
+        self.tutor_llm = ChatOllama(model=chat_model, base_url=base_url, format="json", temperature=0.4,
+                                    reasoning=no_think)
 
     def _ask_vision(self, model: str, prompt: str, image_png: bytes, json_mode: bool) -> str:
         if model in self._broken_models:
@@ -144,12 +187,17 @@ class OllamaServices:
         installed = installed_models(self.base_url) or set()
         return self.reasoning_model if self.reasoning_model in installed else self.chat_model
 
-    def formulate(self, problem: str, diagram: str) -> dict:
-        """One independent setup attempt: unknowns, equations with reasons, target, choices."""
+    def formulate(self, problem: str, diagram: str, think: bool = False) -> dict:
+        """One independent setup attempt: unknowns, equations with reasons, target, choices.
+
+        ``think`` turns on qwen3's thinking mode: much slower, used only when quick setups
+        disagree. Thinking is capped so a confusing problem can't loop for minutes.
+        """
         model = self.active_reasoning_model()
-        thinking = model.startswith("qwen3")  # qwen3 reasons much better with thinking on
+        qwen3 = model.startswith("qwen3")
         llm = ChatOllama(model=model, base_url=self.base_url, format="json", temperature=0.6,
-                         reasoning=thinking or None, num_ctx=8192)
+                         reasoning=(think if qwen3 else None),
+                         num_ctx=16384 if think else 8192, num_predict=6000 if think else 1500)
         diagram_block = f"\nWhat the diagram shows:\n{diagram}\n" if diagram else ""
         data = parse_json(llm.invoke(prompts.FORMULATE_PROMPT.format(problem=problem, diagram=diagram_block)).content)
         return normalize_setup(data) | {"model": model}

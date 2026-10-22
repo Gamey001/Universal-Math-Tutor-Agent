@@ -105,6 +105,7 @@ def _render_steps(steps: list[str], notes: list[str]) -> str:
     blocks = []
     for i, (step, note) in enumerate(zip(steps, notes), 1):
         label, sep, math = step.rpartition(": ")
+        label = label.rstrip(".")  # reasons are often full sentences: "son." + ":" reads badly
         line = f"**{i}. {label}:** `{math}`" if sep else f"**{i}.** `{step}`"
         blocks.append(f"{line}  \n{note}" if note else line)
     return "\n\n".join(blocks)

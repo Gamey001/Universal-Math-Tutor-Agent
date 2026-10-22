@@ -192,6 +192,19 @@ def render_details(state: dict) -> None:
             st.markdown(f"- Removed sentences containing unverified numbers: {', '.join(guard['removed_numbers'])}.")
 
 
+def render_diagram_fix(turn: dict, state: dict) -> None:
+    """Small vision models misread diagrams; let the learner correct the description and retry."""
+    st.markdown("I couldn't set this one up with confidence, and I may have misread the diagram. "
+                "**Here's what I saw.** If anything is wrong or missing, fix it and I'll try again:")
+    with st.form(key=f"diagram-{turn['id']}", border=False):
+        fixed = st.text_area("What the diagram shows", value=state["diagram"], height=220,
+                             label_visibility="collapsed")
+        if st.form_submit_button("Try again with this", type="primary") and fixed.strip():
+            problem = state["extraction"].get("problem_text") or "Solve the problem in the diagram."
+            queue({"text": problem, "diagram": fixed.strip()}, "📐 corrected diagram description")
+            st.rerun()
+
+
 def render_turn(turn: dict, is_latest: bool) -> None:
     with st.chat_message("user", avatar="🙂"):
         if turn.get("image"):
@@ -206,6 +219,8 @@ def render_turn(turn: dict, is_latest: bool) -> None:
         state = turn["state"]
         if turn.get("image"):
             render_reading(turn, state, is_latest)
+        if is_latest and state.get("diagram") and state.get("setups") and state.get("status") != "solved":
+            render_diagram_fix(turn, state)
         if state.get("status") == "needs_context":
             if is_latest:
                 render_context_request(turn, state)

@@ -11,7 +11,7 @@ Everything runs on your machine through [Ollama](https://ollama.com). Nothing le
 ```bash
 # 1. Models (any vision model + any chat model work; these are the defaults)
 ollama pull qwen2.5vl:7b        # reads photos
-ollama pull llama3.1            # writes explanations
+ollama pull qwen3:30b-a3b       # sets up word/diagram problems and writes explanations (~19 GB)
 ollama pull qwen2.5vl:3b        # optional second opinion for hard photos
 
 # 2. Python 3.10–3.13
@@ -23,7 +23,8 @@ python3.12 -m venv .venv
 ```
 
 Override models with environment variables: `TUTOR_VISION_MODEL`, `TUTOR_BACKUP_VISION_MODEL`, `TUTOR_CHAT_MODEL`,
-`OLLAMA_HOST`, `TUTOR_MIN_CONFIDENCE` (see `tutor/config.py`).
+`TUTOR_REASONING_MODEL`, `OLLAMA_HOST`, `TUTOR_MIN_CONFIDENCE`, `TUTOR_SETUP_ATTEMPTS` (see `tutor/config.py`).
+On smaller machines, `TUTOR_CHAT_MODEL=llama3.1` works, but word and diagram problems will rarely be solved.
 
 ## How it works
 
@@ -46,6 +47,7 @@ topic button ──────────────────────�
 | **B: blurry photo, but the topic is visible** | It says kindly that it couldn't read the numbers, teaches the core idea, and walks through a **verified practice (proxy) problem** on the same topic. |
 | **C: blank, fully blurred, unreadable, or no math found** | It **asks the learner** which area of math they need (topic buttons or free text) or to type the problem. Their answer continues the conversation. |
 | **Typed topic** ("I don't get fractions") | Concept lesson plus a verified practice problem. |
+| **Word or diagram problem** (ages, mixtures, angles in a figure…) | The reasoning model writes equations, each with its reason; SymPy solves them. Two independent setups must agree (and match an answer choice, if any). If a diagram can't be set up, the learner sees the diagram description and can correct it. |
 
 ### Accuracy safeguards
 
@@ -61,7 +63,12 @@ Small local models are good at language and unreliable at arithmetic and at read
 3. **The tutor model only writes prose.** It returns JSON (analogy, why each step works, encouragement). The app
    inserts the verified math itself. Any number in the prose that the calculator didn't produce triggers a
    rewrite, and if it persists, that sentence is removed.
-4. **The learner can always correct the reading.** Photo answers show "I read your problem as …" with a box to fix it.
+4. **The learner can always correct the reading.** Photo answers show "I read your problem as …" with a box to fix it,
+   and diagram descriptions are editable when a setup fails.
+6. **Setups are cross-checked.** Word and diagram problems are set up twice, independently: first quickly (thinking
+   off, seconds), then, only if those disagree, carefully (thinking on, capped). Only an agreed answer is shown.
+   In testing, a quick setup wrongly treated vertically opposite angles as adding to 180° (x = 40); the
+   disagreement triggered the careful pass, which found x = 50.
 5. **Blank-photo pre-check** (`tutor/images.py`): blank or completely flat images go straight to "ask for context"
    without waiting on the models.
 
@@ -76,7 +83,7 @@ tutor/services.py    Ollama calls (vision, transcription, text parsing, proxy pr
 tutor/topics.py      Known topics + ready-made, verified practice problems
 tutor/images.py      Image loading, downscaling, blank detection
 tutor/prompts.py     Every prompt and every learner-facing fixed message
-tests/               61 tests; models are faked, so no Ollama needed
+tests/               83 tests; models are faked, so no Ollama needed
 ```
 
 ## Tests
@@ -91,5 +98,6 @@ tests/               61 tests; models are faked, so no Ollama needed
   on both reads, the reads agree. That's why the app always shows what it read and lets the learner correct it.
 - **`llama3.2-vision` doesn't load on newer Ollama versions** (`unknown model architecture: 'mllama'`), so the
   default backup is `qwen2.5vl:7b`. If a configured model can't load, the app skips it and says so in the sidebar.
-- Explanation quality depends on the chat model. `llama3.1` (8B) sometimes picks clumsy analogies, but the
-  numbers it shows are always the verified ones.
+- **Diagrams are the weak spot.** `qwen2.5vl:7b` often misdescribes figures (e.g. inventing a point), and the
+  setup can only be as good as the description. The app then asks the learner to check the description.
+- **Careful (thinking) setups take 2–3 minutes** on an M1 Max. Most word problems finish in the quick pass (~25s).

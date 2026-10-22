@@ -162,10 +162,11 @@ Problem:
 {problem}
 {diagram}
 Reply with ONLY a JSON object:
-"unknowns": a list of {{"name": a single lowercase letter, "meaning": what it stands for in words}}.
+"unknowns": a list of {{"name": a short name with letters, digits or underscores and NO spaces
+            (e.g. x, angle_PMQ, apples), "meaning": what it stands for in words}}.
             Include the quantity the question asks for, plus any helper unknowns you need.
 "equations": a list of {{"equation": one equation using = (use * for times, ^ for powers, only numbers and
-             the single-letter unknown names), "reason": the math fact or problem sentence that justifies it,
+             the unknown names), "reason": the math fact or problem sentence that justifies it,
              in plain words}}. Write exactly as many independent equations as unknowns.
 "target": the name of the unknown the question asks for.
 "choices": the answer choices as plain numbers (e.g. [25, 35, 45, 50]), or [] if there are none.

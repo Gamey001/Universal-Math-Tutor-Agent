@@ -49,7 +49,7 @@ from .topics import match_topic, pick_proxy
 class TutorState(TypedDict, total=False):
     # Inputs: exactly one of these starts a run.
     image: bytes
-    text: str
+    text: str  # optionally with ``diagram``: a learner-corrected diagram description
     requested_topic: str
 
     source: str  # "image" | "text" | "topic"
@@ -203,6 +203,9 @@ def build_graph(services: TutorServices | None = None):
 
     def read_text(state: TutorState) -> dict:
         text = state["text"].strip()
+        if state.get("diagram"):  # the learner corrected a diagram description: go straight to setup
+            return {"source": "text", "extraction": {"legibility": "clear", "problem_text": text, "expression": "",
+                                                     "topic": "", "confidence": 1.0, "specific": True}}
         direct = solve_problem(text)
         if direct.ok:  # typed something SymPy already understands, e.g. "2x + 3 = 11"
             extraction = {"legibility": "clear", "problem_text": text, "expression": text,
@@ -225,24 +228,33 @@ def build_graph(services: TutorServices | None = None):
 
     def formulate(state: TutorState) -> dict:
         extraction = state["extraction"]
-        diagram = ""
-        if state.get("source") == "image":
+        diagram = state.get("diagram") or ""  # set when the learner corrected it
+        if not diagram and state.get("source") == "image":
             try:
                 diagram = services.describe_image(services.vision_model, prepare_for_model(state["image"]))
             except Exception:
                 pass
-        setups = []
-        for _ in range(config.SETUP_ATTEMPTS):
-            try:
-                setup = services.formulate(extraction["problem_text"], diagram)
-            except Exception as exc:
-                setups.append({"error": str(exc), "result": {"ok": False}})
-                continue
-            result = solve_system([(e["equation"], e["reason"]) for e in setup["equations"]],
-                                  setup["target"] or None)
-            setups.append({**setup, "result": result.to_dict()})
+        setups, chosen = [], None
+        for think in (False, True):  # fast pass first; think hard only if those disagree
+            batch = []
+            for _ in range(config.SETUP_ATTEMPTS):
+                try:
+                    setup = services.formulate(extraction["problem_text"], diagram, think=think)
+                except Exception as exc:
+                    batch.append({"error": str(exc), "result": {"ok": False}, "think": think})
+                    continue
+                result = solve_system([(e["equation"], e["reason"]) for e in setup["equations"]],
+                                      setup["target"] or None)
+                batch.append({**setup, "result": result.to_dict(), "think": think})
+            setups += batch
+            chosen = agreed_setup(batch)
+            if chosen:
+                break
+            if diagram and not any(s["result"].get("ok") for s in batch):
+                # No setup was even solvable: the diagram description is probably wrong, and
+                # thinking harder about a wrong picture only burns minutes. Ask the learner instead.
+                break
         update = {"diagram": diagram, "setups": setups}
-        chosen = agreed_setup(setups)
         if chosen:
             update.update(status="solved", math=chosen["result"], setup=chosen,
                           topic=extraction.get("topic", ""))

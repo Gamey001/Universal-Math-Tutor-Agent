@@ -10,10 +10,13 @@ VISION_MODEL = os.getenv("TUTOR_VISION_MODEL", "qwen2.5vl:7b")
 # Second opinion, only used when the primary model can't read the photo clearly.
 BACKUP_VISION_MODEL = os.getenv("TUTOR_BACKUP_VISION_MODEL", "qwen2.5vl:3b")
 # Writes the explanations, proxy problems, and parses typed questions.
-CHAT_MODEL = os.getenv("TUTOR_CHAT_MODEL", "llama3.1:latest")
+# qwen3 (thinking off) writes clearer explanations than llama3.1, and sharing one model with
+# REASONING_MODEL avoids Ollama swapping three large models in and out of GPU memory.
+CHAT_MODEL = os.getenv("TUTOR_CHAT_MODEL", "qwen3:30b-a3b")
 # Turns word and diagram problems into equations for SymPy. Falls back to CHAT_MODEL if not installed.
 REASONING_MODEL = os.getenv("TUTOR_REASONING_MODEL", "qwen3:30b-a3b")
-# Independent setups that must agree before a word/diagram answer is trusted.
+# Independent setups that must agree before a word/diagram answer is trusted. They run as a fast
+# pass (thinking off, seconds) and, only if those disagree, a slow pass (thinking on, minutes).
 SETUP_ATTEMPTS = int(os.getenv("TUTOR_SETUP_ATTEMPTS", "2"))
 
 # Below this self-reported confidence, extracted numbers are not trusted enough to solve.

@@ -77,7 +77,7 @@ class FakeServices:
         self.calls.append(("describe_image", model))
         return self._diagram
 
-    def formulate(self, problem, diagram):
+    def formulate(self, problem, diagram, think=False):
         self.calls.append(("formulate", problem))
         return self._setups.pop(0) if self._setups else {"unknowns": [], "equations": [], "target": "", "choices": []}
 

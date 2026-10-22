@@ -71,3 +71,45 @@ def test_topic_request_does_not_trigger_setup():
     state = run({"text": "I don't get fractions"}, services)
     assert state["status"] == "fallback"
     assert not any(c[0] == "formulate" for c in services.calls)
+
+
+def test_learner_corrected_diagram_goes_straight_to_setup():
+    services = FakeServices(setups=[GOOD, GOOD_ALT])
+    state = run({"text": "Find the value of x in the diagram.", "diagram": "PT and QS cross at M. ..."}, services)
+    assert state["status"] == "solved"
+    assert state["math"]["answer"] == "x = 50"
+    assert not any(c[0] in ("extract_from_text", "describe_image") for c in services.calls)
+
+
+def test_descriptive_names_are_mapped_to_single_letters():
+    from tutor.services import normalize_setup
+    setup = normalize_setup({
+        "unknowns": [{"name": "x", "meaning": "angle at S"}, {"name": "angle_PMQ", "meaning": "angle at M"}],
+        "equations": [{"equation": "35 + 65 + angle PMQ = 180", "reason": "triangle"},
+                      {"equation": "angle_PMQ = angle_SMT", "reason": "vertical angles"},
+                      {"equation": "x + x + angle_SMT = 180", "reason": "triangle"}],
+        "target": "x", "choices": ["25°", 50]})
+    eqs = [e["equation"] for e in setup["equations"]]
+    assert eqs == ["35 + 65 + y = 180", "y = z", "x + x + z = 180"]
+    assert {"name": "y", "meaning": "angle at M"} in setup["unknowns"]
+    assert {"name": "z", "meaning": "angle SMT"} in setup["unknowns"]
+    assert setup["target"] == "x" and setup["choices"] == [25.0, 50.0]
+
+
+def test_slow_pass_runs_only_when_fast_setups_disagree(text_photo):
+    services = FakeServices(reads={"primary": SAT_READ}, setups=[GOOD, WRONG, GOOD, GOOD_ALT])
+    state = run({"image": text_photo}, services)
+    assert state["status"] == "solved"
+    assert [s["think"] for s in state["setups"]] == [False, False, True, True]
+
+    services = FakeServices(reads={"primary": SAT_READ}, setups=[GOOD, GOOD_ALT])
+    state = run({"image": text_photo}, services)
+    assert [s["think"] for s in state["setups"]] == [False, False]
+
+
+def test_diagram_with_no_usable_setup_skips_slow_pass(text_photo):
+    junk = setup(("x + y = 180", "made up"))  # underdetermined: not solvable
+    services = FakeServices(reads={"primary": SAT_READ}, setups=[junk, junk, GOOD, GOOD])
+    state = run({"image": text_photo}, services)
+    assert state["status"] == "fallback"
+    assert [s["think"] for s in state["setups"]] == [False, False]
