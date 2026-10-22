@@ -47,11 +47,12 @@ def get_graph():
 
 def sidebar() -> None:
     st.sidebar.markdown("### 🐢 Slow & Steady")
-    st.sidebar.markdown(
-        "<span class='tutor-note'>Snap a photo or type a question. "
-        "Every number is checked by a calculator (SymPy), never guessed by the AI.</span>",
-        unsafe_allow_html=True,
-    )
+    # Hidden for now; uncomment to show the intro line in the sidebar again.
+    # st.sidebar.markdown(
+    #     "<span class='tutor-note'>Snap a photo or type a question. "
+    #     "Every number is checked by a calculator (SymPy), never guessed by the AI.</span>",
+    #     unsafe_allow_html=True,
+    # )
     st.sidebar.divider()
     models = installed_models()
     if models is None:

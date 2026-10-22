@@ -11,3 +11,7 @@ maxUploadSize = 20
 
 [browser]
 gatherUsageStats = false
+
+[client]
+# Hides Streamlit's Deploy button and the ⋮ menu. Remove this line (or set "auto") to bring them back.
+toolbarMode = "minimal"
