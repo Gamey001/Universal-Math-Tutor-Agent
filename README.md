@@ -26,27 +26,6 @@ Override models with environment variables: `TUTOR_VISION_MODEL`, `TUTOR_BACKUP_
 `TUTOR_REASONING_MODEL`, `OLLAMA_HOST`, `TUTOR_MIN_CONFIDENCE`, `TUTOR_SETUP_ATTEMPTS` (see `tutor/config.py`).
 On smaller machines, `TUTOR_CHAT_MODEL=llama3.1` works, but word and diagram problems will rarely be solved.
 
-## Cloud solver (OpenAI) with local fallback
-
-With an OpenAI key, a strong cloud model reads the photo or question, picks out the actual question
-(ignoring anything else in the image) and solves it step by step. It also restates the problem in
-calculator form, and **SymPy re-solves it independently**:
-
-- answers agree → shown as **"✔ Checked with SymPy"**;
-- they disagree → the model is shown the calculator's result and re-checks once; if it still can't be
-  confirmed, the answer is labelled **"Not confirmed"** instead of being presented as fact;
-- not checkable (proofs, explanations) → labelled **"Solved by the AI"**.
-
-No key, no network, or an API error → the local pipeline below answers automatically.
-Blank photos are caught locally and never sent. Setup:
-
-```bash
-cp .env.example .env          # then put your key in .env (git-ignored)
-.venv/bin/python -m tutor.cloud_check   # confirms the key and model without printing the key
-```
-
-The sidebar shows when the cloud is in use and has a switch to keep everything local.
-
 ## How it works
 
 A LangGraph pipeline (`tutor/graph.py`):

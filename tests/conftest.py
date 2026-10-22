@@ -96,10 +96,3 @@ class FakeServices:
 @pytest.fixture
 def fake_services():
     return FakeServices
-
-
-@pytest.fixture(autouse=True)
-def no_real_cloud(monkeypatch):
-    """Tests never call the real (paid) OpenAI API, even when .env has a key; cloud tests fake it."""
-    from tutor import config
-    monkeypatch.setattr(config, "CLOUD", "off")

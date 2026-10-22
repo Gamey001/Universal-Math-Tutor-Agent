@@ -1,37 +1,7 @@
 """Model names and thresholds. Override any of these with environment variables."""
 
 import os
-from pathlib import Path
 
-
-def _load_dotenv(path: Path = Path(__file__).resolve().parent.parent / ".env") -> None:
-    """Read KEY=value lines from the project's git-ignored .env, without overriding real env vars."""
-    if not path.exists():
-        return
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, _, value = line.partition("=")
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-
-_load_dotenv()
-
-# --- Cloud (OpenAI): reads and solves; the local models below are the automatic fallback. ---
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-# "auto" uses the cloud whenever a key is set; "off" forces local-only (e.g. for privacy or testing).
-CLOUD = os.getenv("TUTOR_CLOUD", "auto")
-OPENAI_MODEL = os.getenv("TUTOR_OPENAI_MODEL", "gpt-5.5")
-# For reasoning models: "low" | "medium" | "high" ("" for models without reasoning, e.g. gpt-4.1).
-OPENAI_REASONING_EFFORT = os.getenv("TUTOR_OPENAI_REASONING_EFFORT", "medium")
-CLOUD_TIMEOUT = float(os.getenv("TUTOR_CLOUD_TIMEOUT", "180"))
-
-
-def cloud_enabled() -> bool:
-    return CLOUD != "off" and bool(OPENAI_API_KEY)
-
-
-# --- Local models (Ollama) ---
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
 # Defaults are the setup measured on eval/cases.json: 46/60 correct, 0 safety failures, median 8.8s.

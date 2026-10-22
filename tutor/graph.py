@@ -36,8 +36,8 @@ from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from . import cloud, config, prompts
-from .explain import explain_solution, explain_topic, render_cloud_lesson
+from . import config, prompts
+from .explain import explain_solution, explain_topic
 from .images import detect_image_issue, prepare_for_model
 import sympy as sp
 
@@ -68,8 +68,6 @@ class TutorState(TypedDict, total=False):
     diagram: str  # the vision model's description of a diagram, for word/diagram problems
     setups: list[dict]  # every independent setup attempt and its SymPy result
     setup: dict  # the agreed setup that produced ``math``
-    cloud: dict  # the cloud model's solution and how it was verified
-    cloud_error: str  # why the cloud wasn't used (the local models answered instead)
 
 
 class ServiceUnavailable(RuntimeError):
@@ -374,36 +372,7 @@ def build_graph(services: TutorServices | None = None):
         message = f"{prompts.ASK_CONTEXT_MESSAGES[reason]}\n\n{prompts.ASK_CONTEXT_FOLLOW_UP}"
         return {"status": "needs_context", "message": message}
 
-    def cloud_solve(state: TutorState) -> dict:
-        source = "image" if state.get("image") else "text"
-        try:
-            solution = cloud.solve(image=state.get("image"), text=state.get("text"))
-        except cloud.CloudUnavailable as exc:
-            return {"source": source, "cloud_error": str(exc)}  # the local pipeline takes over
-        if not solution.found_math:
-            return {"source": source, "status": "needs_context", "cloud": {"found_math": False}}
-        d = solution.data
-        return {
-            "source": source, "status": "solved", "topic": d.get("topic", ""),
-            "cloud": {"found_math": True, "data": d, "verified": solution.verified,
-                      "check_answer": solution.check_answer, "attempts": solution.attempts,
-                      "model": config.OPENAI_MODEL},
-            # The shape the rest of the app (and the evaluation) expects from a solved problem.
-            "math": {"ok": True, "kind": "cloud", "problem": d.get("problem", ""),
-                     "problem_latex": d.get("problem_latex", ""), "answer": d.get("final_answer", ""),
-                     "answer_latex": d.get("final_answer_latex", ""),
-                     "steps": [s.get("title", "") for s in d.get("steps", [])],
-                     "verification": solution.verified, "error": "", "values": {}},
-            "extraction": {"legibility": "clear", "problem_text": d.get("problem", ""),
-                           "expression": d.get("check_problem", ""), "topic": d.get("topic", ""),
-                           "confidence": 1.0},
-        }
-
     def tutor(state: TutorState) -> dict:
-        if state.get("cloud", {}).get("found_math"):
-            c = state["cloud"]
-            return {"explanation": render_cloud_lesson(c["data"], c["verified"], c["check_answer"]),
-                    "guard": {"retried": False, "removed_numbers": []}}
         if state["status"] == "solved":
             original = state.get("extraction", {}).get("problem_text", "")
             if state.get("diagram"):
@@ -423,24 +392,15 @@ def build_graph(services: TutorServices | None = None):
 
     def route_start(state: TutorState) -> str:
         if state.get("image"):
-            return "precheck"  # blank photos are caught locally and never sent to the cloud
+            return "precheck"
         if state.get("requested_topic"):
             return "fallback"
         if (state.get("text") or "").strip():
-            if config.cloud_enabled() and not state.get("diagram"):
-                return "cloud_solve"
             return "read_text"
         return "ask_context"
 
     def after_precheck(state: TutorState) -> str:
-        if state.get("image_issue"):
-            return "ask_context"
-        return "cloud_solve" if config.cloud_enabled() else "read_primary"
-
-    def after_cloud(state: TutorState) -> str:
-        if state.get("cloud_error"):
-            return "read_primary" if state.get("image") else "read_text"  # local fallback
-        return "tutor" if state.get("status") == "solved" else "ask_context"
+        return "ask_context" if state.get("image_issue") else "read_primary"
 
     def after_primary(state: TutorState) -> str:
         if can_solve(state["extraction"]):
@@ -465,12 +425,11 @@ def build_graph(services: TutorServices | None = None):
     graph = StateGraph(TutorState)
     for name, node in [("precheck", precheck), ("read_primary", read_primary), ("read_backup", read_backup),
                        ("read_text", read_text), ("solve", solve), ("formulate", formulate), ("fallback", fallback),
-                       ("ask_context", ask_context), ("tutor", tutor), ("cloud_solve", cloud_solve)]:
+                       ("ask_context", ask_context), ("tutor", tutor)]:
         graph.add_node(name, node)
 
-    graph.add_conditional_edges(START, route_start, ["precheck", "fallback", "read_text", "ask_context", "cloud_solve"])
-    graph.add_conditional_edges("precheck", after_precheck, ["ask_context", "read_primary", "cloud_solve"])
-    graph.add_conditional_edges("cloud_solve", after_cloud, ["read_primary", "read_text", "tutor", "ask_context"])
+    graph.add_conditional_edges(START, route_start, ["precheck", "fallback", "read_text", "ask_context"])
+    graph.add_conditional_edges("precheck", after_precheck, ["ask_context", "read_primary"])
     graph.add_conditional_edges("read_primary", after_primary, ["solve", "formulate", "read_backup"])
     graph.add_conditional_edges("read_backup", after_read, ["solve", "formulate", "fallback", "ask_context"])
     graph.add_conditional_edges("read_text", after_read, ["solve", "formulate", "fallback", "ask_context"])

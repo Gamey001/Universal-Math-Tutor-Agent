@@ -6,4 +6,3 @@ sympy>=1.14
 streamlit>=1.66
 pillow>=11
 pytest>=9
-openai>=3.0
