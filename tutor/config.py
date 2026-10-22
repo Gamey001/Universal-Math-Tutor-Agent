@@ -4,17 +4,23 @@ import os
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
-# Primary vision/OCR model. The 7b says "partial"/"unreadable" for blurry photos where
-# the 3b confidently invents numbers, for ~2s more per read.
+# Defaults are the setup measured on eval/cases.json: 46/60 correct, 0 safety failures, median 8.8s.
+# qwen3-vl:30b-a3b was tried as a single all-in-one model, but that tag is the "thinking" edition: it
+# reasons before every answer even with thinking off (~45s for a one-line reply), so a question took
+# minutes. The non-thinking edition (qwen3-vl:30b-a3b-instruct) is the candidate to evaluate next.
 VISION_MODEL = os.getenv("TUTOR_VISION_MODEL", "qwen2.5vl:7b")
-# Second opinion, only used when the primary model can't read the photo clearly.
-BACKUP_VISION_MODEL = os.getenv("TUTOR_BACKUP_VISION_MODEL", "qwen2.5vl:3b")
-# Writes the explanations, proxy problems, and parses typed questions.
-# qwen3 (thinking off) writes clearer explanations than llama3.1, and sharing one model with
-# REASONING_MODEL avoids Ollama swapping three large models in and out of GPU memory.
+# Second opinion, only used when the primary model can't read the photo clearly ("" turns it off).
+BACKUP_VISION_MODEL = os.getenv("TUTOR_BACKUP_VISION_MODEL", "qwen2.5vl:3b") or None
+# Writes the explanations, proxy problems, and parses typed questions (thinking off: fast).
 CHAT_MODEL = os.getenv("TUTOR_CHAT_MODEL", "qwen3:30b-a3b")
 # Turns word and diagram problems into equations for SymPy. Falls back to CHAT_MODEL if not installed.
 REASONING_MODEL = os.getenv("TUTOR_REASONING_MODEL", "qwen3:30b-a3b")
+# Every model call uses the same context size: Ollama reloads the whole model whenever it changes,
+# which with a 20 GB model meant several reloads (minutes) per question. 16k fits every prompt here.
+NUM_CTX = int(os.getenv("TUTOR_NUM_CTX", "16384"))
+# Keep the model in memory between questions instead of reloading it after Ollama's 5-minute default.
+KEEP_ALIVE = os.getenv("TUTOR_KEEP_ALIVE", "30m")
+
 # Independent setups that must agree before a word/diagram answer is trusted. They run as a fast
 # pass (thinking off, seconds) and, only if those disagree, a slow pass (thinking on, minutes).
 SETUP_ATTEMPTS = int(os.getenv("TUTOR_SETUP_ATTEMPTS", "2"))

@@ -81,6 +81,8 @@ def _sympy(s: str) -> str | None:
         return None
     if re.fullmatch(r"-?\d+/\d+", s) or re.search(r"\bd[a-z]\b", s):  # keep 1/1 as a fraction, du/dx intact
         return None
+    if re.search(r"\b[A-Z]\(", s):  # F(1), F(0): function values, not multiplication
+        return None
     s = (unicode_math(s).replace("·", "*").replace("×", "*").replace("÷", "/").replace("λ", "L")
          .replace("−", "-").replace("∞", "oo"))
     s = re.sub(r"√\(", "sqrt(", s)
@@ -92,7 +94,8 @@ def _sympy(s: str) -> str | None:
     except Exception:
         return None
     latex = sp.latex(expr, order="none", ln_notation=True, imaginary_unit="i")
-    return re.sub(r"(?<![\d.])1 \\cdot ", "", latex)
+    latex = re.sub(r"(?<![\d.])1 \\cdot ", "", latex)
+    return re.sub(r"(?<![\d.}])1 (\\frac)", r"\1", latex)  # unevaluated 1/(3(x+1)) prints as "1 \frac{1}{...}"
 
 
 def _math(s: str) -> str:

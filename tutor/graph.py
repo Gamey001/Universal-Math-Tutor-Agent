@@ -42,7 +42,7 @@ from .images import detect_image_issue, prepare_for_model
 import sympy as sp
 
 from .calculus_tool import looks_like_calculus
-from .math_tool import normalize, solve_problem, solve_system
+from .math_tool import evaluate_given, normalize, solve_problem, solve_system
 from .services import OllamaServices, TutorServices, normalize_extraction
 from .topics import match_topic, pick_proxy
 
@@ -101,6 +101,22 @@ def can_solve(extraction: dict | None) -> bool:
     return solve_problem(extraction["expression"]).ok
 
 
+_LINE_LABEL = re.compile(r"^\s*(?:solution|question|problem|task|exercise|q\d*|\d+[.)])\s*[:.)\-]?\s*", re.IGNORECASE)
+
+
+def problem_lines(text: str, limit: int = 4) -> list[str]:
+    """The first few written lines, without labels like "Solution:" or "1)".
+
+    A photo of a worked solution has no single "expression" for a model to fill in,
+    but the problem is almost always written first: "Solution: ∫x³·ln(x³+1) dx"."""
+    lines = []
+    for raw in (text or "").splitlines()[:8]:
+        line = _LINE_LABEL.sub("", raw).strip()
+        if line and not re.match(r"step\b", line, re.IGNORECASE):
+            lines.append(line)
+    return lines[:limit]
+
+
 def _is_bare_expression(expression: str, problem_text: str) -> bool:
     """An expression with a variable but no question (no =, not calculus, no 'simplify/expand/factor')."""
     if not expression:
@@ -133,13 +149,26 @@ def agreed_setup(setups: list[dict]) -> dict | None:
     and that value must match an answer choice when the problem has choices."""
     if not setups or any(not s.get("result", {}).get("ok") for s in setups):
         return None
-    targets = [_as_number(s["result"]["values"].get(s["target"], "")) for s in setups]
-    if any(t is None for t in targets) or any(abs(t - targets[0]) > 1e-9 for t in targets):
+    answers = [s["result"]["values"].get("value") or s["result"]["values"].get(s["target"], "") for s in setups]
+    if not all(answers) or any(not _same_value(a, answers[0]) for a in answers[1:]):
         return None
+    number = _as_number(answers[0])
     choices = [c for s in setups for c in s.get("choices", [])]
-    if choices and not any(abs(c - targets[0]) < 1e-6 for c in choices):
+    if choices and number is not None and not any(abs(c - number) < 1e-6 for c in choices):
         return None
     return setups[0]
+
+
+def _same_value(a: str, b: str) -> bool:
+    """Numbers compared numerically; symbolic answers like 2(p + q) compared algebraically."""
+    x, y = _as_number(a), _as_number(b)
+    if x is not None and y is not None:
+        return abs(x - y) <= 1e-9 * max(1.0, abs(y))
+    try:
+        from .math_tool import _parse
+        return sp.simplify(_parse(normalize(a.split(" (")[0])) - _parse(normalize(b.split(" (")[0]))) == 0
+    except Exception:
+        return False
 
 
 def _rank(extraction: dict) -> tuple:
@@ -160,6 +189,13 @@ def build_graph(services: TutorServices | None = None):
 
         # A clear word problem may come back without a usable expression; let the
         # chat model translate the words. (Never for blurry reads: numbers would be guesses.)
+        if (extraction["legibility"] == "clear" and extraction["problem_text"]
+                and not solve_problem(extraction["expression"]).ok):
+            # First, deterministically: is one of the first written lines the problem itself?
+            for line in problem_lines(extraction["problem_text"]):
+                if solve_problem(line).ok and not _is_bare_expression(line, extraction["problem_text"]):
+                    extraction["expression"] = line
+                    break
         if (extraction["legibility"] == "clear" and extraction["problem_text"]
                 and not solve_problem(extraction["expression"]).ok):
             try:
@@ -233,10 +269,20 @@ def build_graph(services: TutorServices | None = None):
         else:
             try:
                 parsed = services.extract_from_text(text)
+                expression = parsed["expression"]
+                if expression and _is_bare_expression(expression, text):
+                    expression = ""  # "x^2 + y^2" alone isn't the question; the facts matter (setup handles it)
+                if expression:
+                    # A model translated words into math. Trust it only if an independent second
+                    # translation gives the same answer (one translation once turned a mean into a sum).
+                    second = services.extract_from_text(text, attempt=1)["expression"]
+                    first_result, second_result = solve_problem(expression), solve_problem(second)
+                    if not (first_result.ok and second_result.ok and first_result.answer == second_result.answer):
+                        expression = ""  # disagreement: the careful, cross-checked setup takes over
             except Exception as exc:
                 raise ServiceUnavailable(str(exc)) from exc
             extraction = {"legibility": "clear", "problem_text": parsed["problem_text"] or text,
-                          "expression": parsed["expression"], "topic": parsed["topic"], "confidence": 1.0,
+                          "expression": expression, "topic": parsed["topic"], "confidence": 1.0,
                           # a topic request ("I don't get fractions") has neither of these
                           "specific": bool(parsed["problem_text"] or parsed["expression"])}
         return {"source": "text", "extraction": extraction}
@@ -263,8 +309,11 @@ def build_graph(services: TutorServices | None = None):
                 except Exception as exc:
                     batch.append({"error": str(exc), "result": {"ok": False}, "think": think})
                     continue
-                result = solve_system([(e["equation"], e["reason"]) for e in setup["equations"]],
-                                      setup["target"] or None)
+                facts = [(e["equation"], e["reason"]) for e in setup["equations"]]
+                if setup.get("target_expression"):  # "find the value of p^2(x+y)^2 + ..." given the facts
+                    result = evaluate_given(facts, setup["target_expression"])
+                else:
+                    result = solve_system(facts, setup["target"] or None)
                 batch.append({**setup, "result": result.to_dict(), "think": think})
             setups += batch
             chosen = agreed_setup(batch)

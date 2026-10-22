@@ -65,6 +65,15 @@ topic button ──────────────────────�
 | Differential equations, series | `y' = 2y, y(0) = 3`, `y'' + y = 0`, `y' + y = x`, `taylor series of e^x`, `maclaurin series of sin(x) to order 5` |
 | Word and diagram problems | "Maria is 3 times as old as her son…", angle problems from a photo |
 
+### Math keyboard
+
+When the app isn't sure what a photo says (or for any question), learners can write the problem with an
+on-screen math keyboard instead of typing calculator notation. It has tabs for Calculus (∫ with limits, ∬, ∮,
+d/dx, d²/dx², ∂/∂x, lim, Σ, ∏, ∞, y′), Algebra, Trig & logs, Matrices, Sets & logic, Greek letters and
+letters, and shows what's written as real notation. Built on [MathLive](https://mathlive.io) (MIT licence,
+bundled in `tutor/math_keyboard/frontend/`, so it works offline); `tutor/latex_input.py` converts what's
+written into the solvers' notation, so keyboard questions get the same worked steps and checks.
+
 ### Accuracy safeguards
 
 Small local models are good at language and unreliable at arithmetic and at reading blurry photos. So:

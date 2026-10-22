@@ -214,7 +214,8 @@ def test_photo_of_definite_integral_is_solved(text_photo):
 
 
 def test_restating_never_drops_the_integral(text_photo):
-    unparsable = {**INTEGRAL_READ, "expression": "I = ∫ weird ⌠ notation dx"}
+    unparsable = {**INTEGRAL_READ, "expression": "I = ∫ weird ⌠ notation dx",
+                  "problem_text": "I = ∫ weird ⌠ notation dx\nLet u = 1+x ..."}
     services = FakeServices(reads={"primary": unparsable, "backup": unparsable},
                             text_extractions=[{"expression": "4*x/(x+1)**3", "topic": "calculus", "problem_text": ""}] * 2)
     state = run({"image": text_photo}, services)
@@ -235,3 +236,46 @@ def test_photo_asking_to_expand_is_still_solved(text_photo):
            "topic": "algebra", "confidence": 1.0}
     state = run({"image": text_photo}, FakeServices(reads={"primary": ask}, transcriptions={"primary": "Expand (x+1)^2"}))
     assert state["status"] == "solved"
+
+
+def test_worked_solution_photo_uses_its_first_line(text_photo):
+    board = {"legibility": "clear", "expression": "", "topic": "Calculus", "confidence": 1.0,
+             "problem_text": "Solution: ∫x³·ln(x³+1)dx\nStep 1: Integration by Parts\nLet u = ln(x³+1) dv = x³dx"}
+    services = FakeServices(reads={"primary": board},
+                            transcriptions={"primary": "∫x³·ln(x³+1)dx\nStep 1: Integration by Parts"})
+    state = run({"image": text_photo}, services)
+    assert state["status"] == "solved"
+    assert "3x^4/16" in state["math"]["answer"]  # the board itself wrote x^4/16, which is wrong
+    assert not any(c[0] == "extract_from_text" for c in services.calls)  # no model needed to find it
+
+
+def test_problem_lines_strip_labels():
+    from tutor.graph import problem_lines
+    assert problem_lines("Solution: ∫x dx\nStep 1: power rule\n= x^2/2") == ["∫x dx", "= x^2/2"]
+    assert problem_lines("1) 2x + 3 = 11") == ["2x + 3 = 11"]
+
+
+# --- Typed word problems are cross-checked --------------------------------------
+
+def test_disagreeing_translations_go_to_careful_setup():
+    question = "What is the mean of 4, 8, 15, 16, 23, 42?"
+    sum_only = {"expression": "4 + 8 + 15 + 16 + 23 + 42", "topic": "statistics", "problem_text": question}
+    mean = {"expression": "(4 + 8 + 15 + 16 + 23 + 42)/6", "topic": "statistics", "problem_text": question}
+    setup = {"unknowns": [{"name": "m", "meaning": "mean"}],
+             "equations": [{"equation": "m = (4 + 8 + 15 + 16 + 23 + 42)/6", "reason": "mean = total / count"}],
+             "target": "m", "target_expression": "", "choices": []}
+    services = FakeServices(text_extractions=[sum_only, mean], setups=[setup, setup])
+    state = run({"text": question}, services)
+    assert state["status"] == "solved"
+    assert state["math"]["answer"] == "m = 18"  # not 108
+
+
+def test_typed_facts_question_is_not_answered_with_the_bare_expression():
+    question = "If x + y = 5 and xy = 6, find x^2 + y^2"
+    bare = {"expression": "x^2 + y^2", "topic": "algebra", "problem_text": question}
+    setup = {"unknowns": [], "equations": [{"equation": "x + y = 5", "reason": "given"},
+                                           {"equation": "x*y = 6", "reason": "given"}],
+             "target": "", "target_expression": "x^2 + y^2", "choices": []}
+    state = run({"text": question}, FakeServices(text_extractions=[bare], setups=[setup, setup]))
+    assert state["status"] == "solved"
+    assert state["math"]["answer"] == "13"

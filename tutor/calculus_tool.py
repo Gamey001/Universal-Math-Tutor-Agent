@@ -19,7 +19,7 @@ MAX_STEPS = 12
 
 _CALCULUS = re.compile(
     r"d/d[a-z]|\bderivative|\bdifferentiat|\bintegra|∫|\banti-?derivative|\blim(?:it)?\b|\btaylor|\bmaclaurin"
-    r"|\by'|y′|\bf'|dy/d[a-z]|d\^?2y/d[a-z]", re.IGNORECASE)
+    r"|\by'|y′|\bf'|dy/d[a-z]|d\^?2y/d[a-z]|\b(?:sum|product) (?:of|from)\b|[Σ∑∏]", re.IGNORECASE)
 
 
 def looks_like_calculus(text: str) -> bool:
@@ -175,7 +175,7 @@ def _derivative(f: sp.Expr, x: sp.Symbol, order: int) -> MathResult:
     return _result(f"d{'^' + str(order) if order > 1 else ''}/d{x}{'^' + str(order) if order > 1 else ''} "
                    f"[{show(f)}]",
                    rf"\frac{{d{'^' + str(order) if order > 1 else ''}}}{{d{x}{'^' + str(order) if order > 1 else ''}}}"
-                   rf"\left({sp.latex(f)}\right)",
+                   rf"\left({sp.latex(f, ln_notation=True)}\right)",
                    f"f{prime}({x}) = {show(current)}", sp.latex(current), steps,
                    f"SymPy differentiated it independently and got the same result.{check}")
 
@@ -261,13 +261,15 @@ def _integral(f: sp.Expr, x: sp.Symbol, lower: sp.Expr | None, upper: sp.Expr | 
         steps = []
     antiderivative = _best(sp.integrate(f, x))
     if antiderivative.has(sp.Integral):
+        if lower is not None:
+            return _numeric_definite(f, x, lower, upper)
         raise MathInputError("I can't find an antiderivative for that one, even with my calculator.")
     if not steps or steps[-1].startswith("There's no standard rule"):
         steps.append(f"This one needs a special function; SymPy gives {show(antiderivative)}")
     derivative_check = sp.simplify(sp.diff(antiderivative, x) - f) == 0
     if lower is None:
         steps.append(f"Add the constant of integration: {show(antiderivative)} + C")
-        return _result(f"∫{show(f)} d{x}", rf"\int {sp.latex(f)}\, d{x}", f"{show(antiderivative)} + C",
+        return _result(f"∫{show(f)} d{x}", rf"\int {sp.latex(f, ln_notation=True)}\, d{x}", f"{show(antiderivative)} + C",
                        sp.latex(antiderivative) + " + C", steps,
                        "Differentiating the answer gives back the original function"
                        + (" ✔" if derivative_check else " ✘"))
@@ -287,10 +289,31 @@ def _integral(f: sp.Expr, x: sp.Symbol, lower: sp.Expr | None, upper: sp.Expr | 
         pass
     answer = show(value) + (f" (about {float(sp.N(value)):.6g})" if value.is_real and not value.is_Rational else "")
     return _result(f"∫ from {show(lower)} to {show(upper)} of {show(f)} d{x}",
-                   rf"\int_{{{sp.latex(lower)}}}^{{{sp.latex(upper)}}} {sp.latex(f)}\, d{x}",
+                   rf"\int_{{{sp.latex(lower)}}}^{{{sp.latex(upper)}}} {sp.latex(f, ln_notation=True)}\, d{x}",
                    answer, sp.latex(value), steps,
                    "Differentiating the antiderivative gives back the original function"
                    + (" ✔." if derivative_check else " ✘.") + numeric)
+
+
+def _numeric_definite(f: sp.Expr, x: sp.Symbol, lower: sp.Expr, upper: sp.Expr) -> MathResult:
+    """No antiderivative in ordinary functions: measure the area to 30 digits, then see whether that number
+    is exactly a simple closed form (like 2π²). The steps say plainly that this is how it was found."""
+    value = sp.Integral(f, (x, lower, upper)).evalf(30)
+    if not value.is_number or not value.is_finite:
+        raise MathInputError("I couldn't measure that area reliably.")
+    guess = sp.nsimplify(value, [sp.pi, sp.E, sp.sqrt(2), sp.sqrt(3), sp.log(2)], tolerance=1e-25, rational=False)
+    exact = guess.is_number and len(str(guess)) < 25 and abs(sp.N(guess, 30) - value) < sp.Float(10) ** -25
+    steps = [f"This one has no antiderivative made of ordinary functions, so measure the area numerically "
+             f"(to 30 digits): {sp.N(value, 15)}…"]
+    if exact:
+        steps.append(f"That number matches {show(guess)} in all 30 digits, so the exact answer is {show(guess)}")
+    answer = show(guess) if exact else f"{float(value):.10g}"
+    return _result(f"∫ from {show(lower)} to {show(upper)} of {show(f)} d{x}",
+                   rf"\int_{{{sp.latex(lower)}}}^{{{sp.latex(upper)}}} {sp.latex(f, ln_notation=True)}\, d{x}",
+                   answer + (f" (about {float(value):.6g})" if exact else ""),
+                   sp.latex(guess) if exact else sp.latex(sp.Float(value, 10)), steps,
+                   "Measured with high-precision numerical integration"
+                   + (f"; it equals {show(guess)} to 30 digits." if exact else " (no simple exact form found)."))
 
 
 # ---- limits ----------------------------------------------------------------
@@ -337,7 +360,7 @@ def _limit(f: sp.Expr, x: sp.Symbol, a: sp.Expr, direction: str) -> MathResult:
         pass
     arrow = f"{show(a)}{direction if direction in ('+', '-') else ''}"
     return _result(f"limit of {show(f)} as {x} → {arrow}",
-                   rf"\lim_{{{x} \to {sp.latex(a)}}} {sp.latex(f)}", show(value), sp.latex(value), steps,
+                   rf"\lim_{{{x} \to {sp.latex(a)}}} {sp.latex(f, ln_notation=True)}", show(value), sp.latex(value), steps,
                    f"SymPy computed the limit independently.{check}")
 
 
@@ -435,6 +458,48 @@ def _ode(text: str) -> MathResult:
                    "Putting this y back into the equation makes both sides equal" + (" ✔" if ok else " ✘"))
 
 
+# ---- sums and products ----
+
+def _series(kind: str, f: sp.Expr, k: sp.Symbol, start: sp.Expr, end: sp.Expr) -> MathResult:
+    op, word, symbol = (sp.summation, "Add", "Σ") if kind == "sum" else (sp.product, "Multiply", "∏")
+    value = sp.simplify(op(f, (k, start, end)))
+    if value.has(sp.Sum, sp.Product) or value is sp.nan:
+        raise MathInputError(f"I couldn't work out that {kind}.")
+    steps, check = [], ""
+    count = end - start + 1 if end.is_finite and start.is_finite else None
+    if count is not None and count.is_Integer and count <= 8:
+        terms = [f.subs(k, j) for j in range(int(start), int(end) + 1)]
+        joiner = " + " if kind == "sum" else " × "
+        steps.append(f"{word} the terms for {k} = {show(start)} to {show(end)}: "
+                     f"{joiner.join(show(t) for t in terms)} = {show(value)}")
+    elif end.is_finite:
+        n = sp.Symbol("n")
+        closed = sp.factor(op(f, (k, start, n)))
+        if not closed.has(sp.Sum, sp.Product):
+            steps.append(f"Use the formula for the {kind} up to n: {symbol} from {k} = {show(start)} to n of "
+                         f"{show(f)} = {show(closed)}")
+            shown_sub = show(closed.xreplace({n: sp.UnevaluatedExpr(end)}))  # keep "100·(100 + 1)/2" visible
+            steps.append(f"Put in n = {show(end)}: {shown_sub} = {show(value)}")
+        else:
+            steps.append(f"{word} all the terms: {show(value)}")
+    else:
+        steps.append(f"The terms shrink fast enough that the infinite {kind} settles on a value: {show(value)}")
+    # Independent check: add (or multiply) the terms one by one.
+    if count is not None and count.is_Integer and count <= 100000:
+        brute = sp.Integer(0) if kind == "sum" else sp.Integer(1)
+        for j in range(int(start), int(end) + 1):
+            brute = brute + f.subs(k, j) if kind == "sum" else brute * f.subs(k, j)
+        check = f"{word}ing all {count} terms one by one gives the same result" + (" ✔" if sp.simplify(brute - value) == 0 else " ✘")
+    elif end == sp.oo and start.is_Integer:
+        partial = sum(f.subs(k, j) for j in range(int(start), int(start) + 20000)).evalf(12) if kind == "sum" else None
+        if partial is not None and _close(partial, value) or (partial is not None and abs(float(partial - value)) < 1e-3):
+            check = f"Adding the first 20,000 terms gives {float(partial):.6g}, closing in on {show(value)} ✔"
+    answer = show(value) + (f" (about {float(value):.6g})" if value.is_number and not value.is_Integer else "")
+    return _result(f"{kind} of {show(f)} for {k} = {show(start)} to {show(end)}",
+                   rf"\{'sum' if kind == 'sum' else 'prod'}_{{{k}={sp.latex(start)}}}^{{{sp.latex(end)}}} {sp.latex(f)}",
+                   answer, sp.latex(value), steps, check or "Computed exactly by SymPy.")
+
+
 # ---- Taylor series ---------------------------------------------------------
 
 def _taylor(f: sp.Expr, x: sp.Symbol, a: sp.Expr, n: int) -> MathResult:
@@ -451,7 +516,7 @@ def _taylor(f: sp.Expr, x: sp.Symbol, a: sp.Expr, n: int) -> MathResult:
     steps.append(f"Each term is f^(k)({show(a)}) / k! · ({show(x - a)})^k; adding them up gives {shown_poly}")
     ok = sp.simplify(sp.series(f, x, a, n + 1).removeO() - polynomial) == 0
     return _result(f"Taylor polynomial of {show(f)} about {x} = {show(a)}, degree {n}",
-                   rf"T_{n}\left({sp.latex(f)}\right)", f"{shown_poly} + …",
+                   rf"T_{n}\left({sp.latex(f, ln_notation=True)}\right)", f"{shown_poly} + …",
                    sp.latex(polynomial) + r" + \dots", steps,
                    "SymPy's own series expansion matches" + (" ✔" if ok else " ✘"))
 
@@ -471,6 +536,13 @@ def solve_calculus_problem(text: str) -> MathResult:
     s = _strip(text)
     if len(s) > 300:
         raise MathInputError("That problem is too long for me to check.")
+
+    if m := (re.fullmatch(r"(?P<kind>sum|product) of (?P<f>.+?) for (?P<k>[a-z]) from (?P<a>\S+) to (?P<b>\S+)", s,
+                          re.IGNORECASE)
+             or re.fullmatch(r"(?P<kind>sum|product) from (?P<k>[a-z]) ?= ?(?P<a>\S+) to (?P<b>\S+) of (?P<f>.+)", s,
+                             re.IGNORECASE)):
+        f = _expr(m.group("f"))
+        return _series(m.group("kind").lower(), f, sp.Symbol(m.group("k")), _expr(m.group("a")), _expr(m.group("b")))
 
     if re.search(r"y'|y′|dy/d[a-z]|d\^?2y/d", s):
         return _ode(s)
