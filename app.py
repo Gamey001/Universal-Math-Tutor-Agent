@@ -58,6 +58,8 @@ def sidebar() -> None:
     broken = get_services()._broken_models
     for label, name in [("Chat model", config.CHAT_MODEL), ("Vision model", config.VISION_MODEL),
                         ("Backup vision", config.BACKUP_VISION_MODEL)]:
+        if not name:
+            continue  # no backup vision model configured
         if name in broken:
             st.sidebar.warning(f"{label} can't load · `{name}`  \nSkipping it; photos use the main vision model only.")
         elif name in models or name.removesuffix(":latest") in models:

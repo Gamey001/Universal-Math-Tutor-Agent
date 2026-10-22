@@ -18,6 +18,8 @@ from langchain_ollama import ChatOllama
 from . import config, prompts
 
 LEGIBILITY_LEVELS = ("clear", "partial", "unreadable")
+# Same context size and keep-alive on every call, so Ollama loads each model once and keeps it.
+_SHARED = {"num_ctx": config.NUM_CTX, "keep_alive": config.KEEP_ALIVE}
 
 
 class TutorServices(Protocol):
@@ -171,10 +173,10 @@ class OllamaServices:
         self._broken_models: dict[str, str] = {}
         no_think = False if chat_model.startswith("qwen3") else None  # quick replies; no thinking needed
         self._chat_json = ChatOllama(model=chat_model, base_url=base_url, format="json", temperature=0,
-                                     reasoning=no_think)
+                                     reasoning=no_think, **_SHARED)
         # JSON mode: the tutor only writes prose fields; explain.py inserts all the math.
         self.tutor_llm = ChatOllama(model=chat_model, base_url=base_url, format="json", temperature=0.4,
-                                    reasoning=no_think)
+                                    reasoning=no_think, **_SHARED)
 
     def _ask_vision(self, model: str, prompt: str, image_png: bytes, json_mode: bool) -> str:
         if model in self._broken_models:
@@ -186,7 +188,7 @@ class OllamaServices:
         ])
         # qwen3-vl thinks by default; reading a photo doesn't need it, and it's much slower.
         llm = ChatOllama(model=model, base_url=self.base_url, temperature=0, format="json" if json_mode else None,
-                         reasoning=False if model.startswith("qwen3") else None)
+                         reasoning=False if model.startswith("qwen3") else None, **_SHARED)
         try:
             return llm.invoke([message]).content
         except Exception as exc:
@@ -220,8 +222,7 @@ class OllamaServices:
         model = self.active_reasoning_model()
         qwen3 = model.startswith("qwen3")
         llm = ChatOllama(model=model, base_url=self.base_url, format="json", temperature=0.6,
-                         reasoning=(think if qwen3 else None),
-                         num_ctx=16384 if think else 8192, num_predict=6000 if think else 1500)
+                         reasoning=(think if qwen3 else None), num_predict=6000 if think else 1500, **_SHARED)
         diagram_block = f"\nWhat the diagram shows:\n{diagram}\n" if diagram else ""
         data = parse_json(llm.invoke(prompts.FORMULATE_PROMPT.format(problem=problem, diagram=diagram_block)).content)
         return normalize_setup(data) | {"model": model}
@@ -230,7 +231,7 @@ class OllamaServices:
         """Words -> math. attempt > 0 samples an independent second translation to cross-check the first."""
         llm = self._chat_json if attempt == 0 else ChatOllama(
             model=self.chat_model, base_url=self.base_url, format="json", temperature=0.7,
-            reasoning=False if self.chat_model.startswith("qwen3") else None)
+            reasoning=False if self.chat_model.startswith("qwen3") else None, **_SHARED)
         reply = llm.invoke(prompts.TEXT_EXTRACTION_PROMPT.format(text=text))
         data = parse_json(reply.content)
         return {
