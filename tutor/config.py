@@ -21,7 +21,7 @@ _load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 # "auto" uses the cloud whenever a key is set; "off" forces local-only (e.g. for privacy or testing).
 CLOUD = os.getenv("TUTOR_CLOUD", "auto")
-OPENAI_MODEL = os.getenv("TUTOR_OPENAI_MODEL", "gpt-5")
+OPENAI_MODEL = os.getenv("TUTOR_OPENAI_MODEL", "gpt-5.5")
 # For reasoning models: "low" | "medium" | "high" ("" for models without reasoning, e.g. gpt-4.1).
 OPENAI_REASONING_EFFORT = os.getenv("TUTOR_OPENAI_REASONING_EFFORT", "medium")
 CLOUD_TIMEOUT = float(os.getenv("TUTOR_CLOUD_TIMEOUT", "180"))
