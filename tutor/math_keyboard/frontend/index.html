@@ -36,10 +36,19 @@
 <script>
   // ---- Streamlit component protocol (no build step needed) ----
   function send(type, data) { window.parent.postMessage(Object.assign({isStreamlitMessage: true, type}, data), "*"); }
+  // Height = our controls + the keyboard, counted once. (MathLive pads the page by the keyboard's height
+  // while it's open, so measuring the whole page and adding the keyboard again doubled it and pushed the
+  // keyboard below the bottom of a laptop screen.)
   function setHeight() {
+    const controls = document.querySelector(".row");
+    const contentBottom = Math.ceil(controls.getBoundingClientRect().bottom + window.scrollY) + 10;
     const kb = window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible
-      ? window.mathVirtualKeyboard.boundingRect.height : 0;
-    send("streamlit:setFrameHeight", {height: document.body.scrollHeight + kb + 12});
+      ? Math.ceil(window.mathVirtualKeyboard.boundingRect.height) : 0;
+    send("streamlit:setFrameHeight", {height: contentBottom + kb});
+  }
+  // Bring the whole keyboard into view on the page (the app and this frame share an origin).
+  function revealKeyboard() {
+    try { window.frameElement.scrollIntoView({block: "nearest", behavior: "smooth"}); } catch (e) { /* not allowed: skip */ }
   }
   let nonce = 0;
 
@@ -108,7 +117,7 @@
     ],
   };
   mathVirtualKeyboard.layouts = ["numeric", CALCULUS, ALGEBRA, TRIG, MATRICES, SETS, "greek", "alphabetic"];
-  mathVirtualKeyboard.addEventListener("geometrychange", setHeight);
+  mathVirtualKeyboard.addEventListener("geometrychange", () => { setHeight(); setTimeout(revealKeyboard, 120); });
   // Don't pop the on-screen keyboard open on focus: it briefly moves focus and resizes the frame, and
   // keys typed on a real keyboard during that moment were lost. Typing works straight away; the
   // on-screen keyboard opens from the ⌨️ button (or the keyboard icon in the box).
@@ -120,7 +129,7 @@
     } else {
       mathVirtualKeyboard.show();
     }
-    setTimeout(() => { field.focus(); setHeight(); }, 60);  // keep typing in the box after toggling
+    setTimeout(() => { field.focus(); setHeight(); setTimeout(revealKeyboard, 150); }, 60);  // keep typing in the box
   };
   document.getElementById("clear").onclick = () => { field.value = ""; field.focus(); };
   document.getElementById("submit").onclick = () => {
