@@ -175,7 +175,7 @@ def _derivative(f: sp.Expr, x: sp.Symbol, order: int) -> MathResult:
     return _result(f"d{'^' + str(order) if order > 1 else ''}/d{x}{'^' + str(order) if order > 1 else ''} "
                    f"[{show(f)}]",
                    rf"\frac{{d{'^' + str(order) if order > 1 else ''}}}{{d{x}{'^' + str(order) if order > 1 else ''}}}"
-                   rf"\left({sp.latex(f)}\right)",
+                   rf"\left({sp.latex(f, ln_notation=True)}\right)",
                    f"f{prime}({x}) = {show(current)}", sp.latex(current), steps,
                    f"SymPy differentiated it independently and got the same result.{check}")
 
@@ -267,7 +267,7 @@ def _integral(f: sp.Expr, x: sp.Symbol, lower: sp.Expr | None, upper: sp.Expr | 
     derivative_check = sp.simplify(sp.diff(antiderivative, x) - f) == 0
     if lower is None:
         steps.append(f"Add the constant of integration: {show(antiderivative)} + C")
-        return _result(f"∫{show(f)} d{x}", rf"\int {sp.latex(f)}\, d{x}", f"{show(antiderivative)} + C",
+        return _result(f"∫{show(f)} d{x}", rf"\int {sp.latex(f, ln_notation=True)}\, d{x}", f"{show(antiderivative)} + C",
                        sp.latex(antiderivative) + " + C", steps,
                        "Differentiating the answer gives back the original function"
                        + (" ✔" if derivative_check else " ✘"))
@@ -287,7 +287,7 @@ def _integral(f: sp.Expr, x: sp.Symbol, lower: sp.Expr | None, upper: sp.Expr | 
         pass
     answer = show(value) + (f" (about {float(sp.N(value)):.6g})" if value.is_real and not value.is_Rational else "")
     return _result(f"∫ from {show(lower)} to {show(upper)} of {show(f)} d{x}",
-                   rf"\int_{{{sp.latex(lower)}}}^{{{sp.latex(upper)}}} {sp.latex(f)}\, d{x}",
+                   rf"\int_{{{sp.latex(lower)}}}^{{{sp.latex(upper)}}} {sp.latex(f, ln_notation=True)}\, d{x}",
                    answer, sp.latex(value), steps,
                    "Differentiating the antiderivative gives back the original function"
                    + (" ✔." if derivative_check else " ✘.") + numeric)
@@ -337,7 +337,7 @@ def _limit(f: sp.Expr, x: sp.Symbol, a: sp.Expr, direction: str) -> MathResult:
         pass
     arrow = f"{show(a)}{direction if direction in ('+', '-') else ''}"
     return _result(f"limit of {show(f)} as {x} → {arrow}",
-                   rf"\lim_{{{x} \to {sp.latex(a)}}} {sp.latex(f)}", show(value), sp.latex(value), steps,
+                   rf"\lim_{{{x} \to {sp.latex(a)}}} {sp.latex(f, ln_notation=True)}", show(value), sp.latex(value), steps,
                    f"SymPy computed the limit independently.{check}")
 
 
@@ -451,7 +451,7 @@ def _taylor(f: sp.Expr, x: sp.Symbol, a: sp.Expr, n: int) -> MathResult:
     steps.append(f"Each term is f^(k)({show(a)}) / k! · ({show(x - a)})^k; adding them up gives {shown_poly}")
     ok = sp.simplify(sp.series(f, x, a, n + 1).removeO() - polynomial) == 0
     return _result(f"Taylor polynomial of {show(f)} about {x} = {show(a)}, degree {n}",
-                   rf"T_{n}\left({sp.latex(f)}\right)", f"{shown_poly} + …",
+                   rf"T_{n}\left({sp.latex(f, ln_notation=True)}\right)", f"{shown_poly} + …",
                    sp.latex(polynomial) + r" + \dots", steps,
                    "SymPy's own series expansion matches" + (" ✔" if ok else " ✘"))
 
