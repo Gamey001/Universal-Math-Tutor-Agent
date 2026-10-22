@@ -3,3 +3,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+
+# Evaluation: third-party photos stay local; results are regenerated
+eval/images/*.jpeg
+eval/images/*_screenshot.png
+eval/images/whiteboard_x3_ln.png
+eval/images/pq_expression.png
+eval/results/
