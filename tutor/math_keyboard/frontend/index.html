@@ -109,12 +109,18 @@
   };
   mathVirtualKeyboard.layouts = ["numeric", CALCULUS, ALGEBRA, TRIG, MATRICES, SETS, "greek", "alphabetic"];
   mathVirtualKeyboard.addEventListener("geometrychange", setHeight);
-  field.addEventListener("focusin", () => { mathVirtualKeyboard.show(); setHeight(); });
+  // Don't pop the on-screen keyboard open on focus: it briefly moves focus and resizes the frame, and
+  // keys typed on a real keyboard during that moment were lost. Typing works straight away; the
+  // on-screen keyboard opens from the ⌨️ button (or the keyboard icon in the box).
   field.addEventListener("input", setHeight);
 
   document.getElementById("keys").onclick = () => {
-    mathVirtualKeyboard.visible ? mathVirtualKeyboard.hide() : (field.focus(), mathVirtualKeyboard.show());
-    setTimeout(setHeight, 50);
+    if (mathVirtualKeyboard.visible) {
+      mathVirtualKeyboard.hide();
+    } else {
+      mathVirtualKeyboard.show();
+    }
+    setTimeout(() => { field.focus(); setHeight(); }, 60);  // keep typing in the box after toggling
   };
   document.getElementById("clear").onclick = () => { field.value = ""; field.focus(); };
   document.getElementById("submit").onclick = () => {
