@@ -43,6 +43,11 @@ _ALLOWED_NAMES = {
     "ceiling": sp.ceiling,
     "ceil": sp.ceiling,
     "mod": sp.Mod,
+    "i": sp.I,  # imaginary unit, as written in school: 3 + 4i
+    "conjugate": sp.conjugate,
+    "arg": sp.arg,
+    "re": sp.re,
+    "im": sp.im,
 }
 
 _UNICODE_REPLACEMENTS = {
@@ -217,8 +222,14 @@ def _operation_steps(unevaluated: sp.Expr, max_steps: int = 8) -> list[str]:
     steps: list[str] = []
 
     def walk(node: sp.Expr) -> sp.Expr:
-        if node.is_Number:
+        if node.is_Number or node == sp.I:
             return node
+        if isinstance(node, sp.Pow) and node.args[0] == sp.I and node.args[1].is_Integer:
+            n = int(node.args[1])
+            value = sp.I ** n
+            steps.append(f"Powers of i repeat every 4 (i, -1, -i, 1). {n} ÷ 4 leaves remainder {n % 4}, "
+                         f"so i^{n} = {_number(value)}")
+            return value
         if isinstance(node, sp.factorial):
             n = walk(node.args[0])
             value = sp.factorial(n)
@@ -282,8 +293,23 @@ def _operation_steps(unevaluated: sp.Expr, max_steps: int = 8) -> list[str]:
     return steps if len(steps) <= max_steps else []
 
 
+def _quadratic_formula_steps(expr: sp.Expr, var: sp.Symbol) -> list[str]:
+    """Quadratic formula, for quadratics that don't factor nicely (irrational or complex roots)."""
+    a, b, c = sp.Poly(expr, var).all_coeffs()
+    disc = b ** 2 - 4 * a * c
+    steps = [f"Read off a = {_number(a)}, b = {_number(b)}, c = {_number(c)} from {sp.sstr(expr)} = 0",
+             f"Discriminant b^2 - 4ac = ({_number(b)})^2 - 4({_number(a)})({_number(c)}) = {_number(disc)}"]
+    if disc < 0:
+        steps.append(f"The discriminant is negative, so the answers are complex: "
+                     f"√({_number(disc)}) = {sp.sstr(sp.sqrt(disc))}")
+    roots = [sp.simplify((-b + sign * sp.sqrt(disc)) / (2 * a)) for sign in (1, -1)]
+    steps.append(f"x = (-b ± √discriminant) / 2a = ({_number(-b)} ± {sp.sstr(sp.sqrt(disc))}) / {_number(2 * a)}"
+                 f" → {var} = {sp.sstr(roots[0])} or {var} = {sp.sstr(roots[1])}")
+    return steps
+
+
 def _quadratic_steps(lhs: sp.Expr, rhs: sp.Expr, var: sp.Symbol) -> list[str]:
-    """Factor-and-split steps when a quadratic factors over the rationals."""
+    """Factor-and-split steps when a quadratic factors over the rationals, else the formula."""
     expr = sp.expand(lhs - rhs)
     if expr.free_symbols != {var} or sp.Poly(expr, var).degree() != 2:
         return []
@@ -293,7 +319,7 @@ def _quadratic_steps(lhs: sp.Expr, rhs: sp.Expr, var: sp.Symbol) -> list[str]:
     for f in factors:
         base, power = (f.args if isinstance(f, sp.Pow) else (f, 1))
         if sp.Poly(base, var).degree() != 1:
-            return []
+            return _quadratic_formula_steps(expr, var)
         linear.append(base)
     steps = []
     if rhs != 0:
@@ -453,6 +479,8 @@ def _tidy(text: str) -> str:
     text = re.sub(r"(?<![\w.])(\d+(?:\.\d+)?)\*(?=[a-z(])", r"\1", text)  # 2*x -> 2x, 3*(x+1) -> 3(x+1)
     text = text.replace(")*(", ")(")
     text = re.sub(r"factorial\((\w+)\)", r"\1!", text)  # factorial(5) -> 5!
+    text = re.sub(r"\*I\b", "i", text)  # SymPy's imaginary unit: 4*I -> 4i
+    text = re.sub(r"\bI\b", "i", text)
     return text
 
 
@@ -474,8 +502,140 @@ def solve_problem(text: str) -> MathResult:
         return MathResult(ok=False, error="I couldn't check this problem with my calculator.")
 
 
+_COMPLEX_SQUARE = re.compile(r"^\(([^()]+)\)\s*\^\s*2$")
+_COMPLEX_BINARY = re.compile(r"^\(([^()]+)\)\s*([-+*/]?)\s*\(([^()]+)\)$")
+_COMPLEX_UNARY = re.compile(r"^(abs|arg|conjugate|polar)\s*\(([^()]+)\)$", re.IGNORECASE)
+
+
+def _complex_parts(text: str) -> tuple[sp.Expr, sp.Expr]:
+    _check_safe(text)
+    value = sp.simplify(_parse(text))
+    if not value.is_number:
+        raise MathInputError("not a number")
+    return sp.simplify(sp.re(value)), sp.simplify(sp.im(value))
+
+
+def _p(value: sp.Expr) -> str:
+    """A number in brackets if negative, so "3^2 + (-1)^2" can't be misread as 3^2 - 1^2."""
+    return f"({_number(value)})" if value < 0 else _number(value)
+
+
+def _cx(re_part: sp.Expr, im_part: sp.Expr) -> str:
+    """Show a complex number as a + bi."""
+    if im_part == 0:
+        return _number(re_part)
+    coeff = _number(abs(im_part))
+    coeff = f"({coeff})" if "/" in coeff else coeff  # (7/10)i, not the ambiguous 7/10i
+    imag = ("i" if abs(im_part) == 1 else f"{coeff}i")
+    imag = f"-{imag}" if im_part < 0 else imag
+    if re_part == 0:
+        return imag
+    return f"{_number(re_part)} {'-' if im_part < 0 else '+'} {imag.lstrip('-')}"
+
+
+def _complex_problem(s: str) -> MathResult | None:
+    """Worked steps for one operation on complex numbers, e.g. (2 + 3i)(1 - i) or abs(3 + 4i)."""
+    square = _COMPLEX_SQUARE.match(s)
+    if square:  # (a + bi)^2 is worked as (a + bi)(a + bi)
+        s = f"({square.group(1)})({square.group(1)})"
+    unary = _COMPLEX_UNARY.match(s)
+    binary = _COMPLEX_BINARY.match(s)
+    try:
+        if unary:
+            op = unary.group(1).lower()
+            a, b = _complex_parts(unary.group(2))
+            z = _cx(a, b)
+            r = sp.sqrt(a ** 2 + b ** 2)
+            theta = sp.atan2(b, a)
+            angle = f"{sp.sstr(theta)} (about {float(theta):.4g} radians, {float(theta * 180 / sp.pi):.4g}°)"
+            modulus = (f"Distance from 0: |{z}| = √({_p(a)}^2 + {_p(b)}^2) = "
+                       f"√{_number(a ** 2 + b ** 2)} = {_fmt(r)}")
+            angle_step = f"Angle from the positive real axis: θ = atan2({_number(b)}, {_number(a)}) = {angle}"
+            if op == "abs":
+                steps, value, answer = [modulus], r, _fmt(r)
+            elif op == "arg":
+                steps, value, answer = [angle_step], theta, angle
+            elif op == "conjugate":
+                value = a - b * sp.I
+                steps, answer = [f"Flip the sign of the imaginary part: {z} → {_cx(a, -b)}"], _cx(a, -b)
+            else:  # polar
+                steps = [modulus, angle_step]
+                value = r * sp.exp(sp.I * theta)
+                answer = f"{_fmt(r)} × (cos θ + i sin θ), with θ = {angle}"
+            return MathResult(ok=True, kind="evaluate", problem=f"{op}({z})", problem_latex=f"\\operatorname{{{op}}}({z})",
+                              answer=answer, answer_latex=sp.latex(value), steps=steps,
+                              verification=f"SymPy computed {op}({z}) exactly.")
+        if binary:
+            (a, b), op, (c, d) = _complex_parts(binary.group(1)), binary.group(2) or "*", _complex_parts(binary.group(3))
+            if b == 0 and d == 0:
+                return None  # plain real arithmetic: the normal path explains it
+            z, w = _cx(a, b), _cx(c, d)
+            if op in "+-":
+                sign = 1 if op == "+" else -1
+                re_part, im_part = a + sign * c, b + sign * d
+                verb = "Add" if op == "+" else "Subtract"
+                steps = [f"{verb} the real parts: {_number(a)} {op} {_p(c)} = {_number(re_part)}",
+                         f"{verb} the imaginary parts: {_number(b)} {op} {_p(d)} = {_number(im_part)}"]
+            elif op == "*":
+                re_part, im_part = a * c - b * d, a * d + b * c
+                bi, di = _cx(0, b), _cx(0, d)
+                steps = [f"Multiply every part by every part: ({_number(a)})({_number(c)}) + ({_number(a)})({di})"
+                         f" + ({bi})({_number(c)}) + ({bi})({di})",
+                         f"Use i^2 = -1, so ({bi})({di}) = {_number(-b * d)}",
+                         f"Real part: {_number(a * c)} + {_p(-b * d)} = {_number(re_part)}; "
+                         f"imaginary part: {_number(a * d)} + {_p(b * c)} = {_number(im_part)}"]
+            else:
+                denom = c ** 2 + d ** 2
+                if denom == 0:
+                    raise MathInputError("You can't divide by zero.")
+                top_re, top_im = a * c + b * d, b * c - a * d
+                re_part, im_part = sp.Rational(1, 1) * top_re / denom, sp.Rational(1, 1) * top_im / denom
+                steps = [f"Multiply top and bottom by the conjugate of the bottom, {_cx(c, -d)}, "
+                         f"so the bottom becomes a real number",
+                         f"Bottom: ({w})({_cx(c, -d)}) = {_p(c)}^2 + {_p(d)}^2 = {_number(denom)}",
+                         f"Top: ({z})({_cx(c, -d)}) = {_cx(top_re, top_im)}",
+                         f"Divide each part by {_number(denom)}: {_cx(re_part, im_part)}"]
+            value = re_part + im_part * sp.I
+            return MathResult(ok=True, kind="evaluate", problem=f"({z}) {op} ({w})",
+                              problem_latex=f"({z}) {'\\cdot' if op == '*' else op} ({w})",
+                              answer=_cx(re_part, im_part), answer_latex=sp.latex(value), steps=steps,
+                              verification=f"SymPy gives {_cx(sp.re(value), sp.im(value))} as well.")
+    except MathInputError:
+        return None
+    return None
+
+
+def _split_equations(text: str) -> list[str] | None:
+    """'x + y = 10; x - y = 2' (or with commas, 'and', or new lines) -> ['x + y = 10', 'x - y = 2']."""
+    parts, depth, current = [], 0, ""
+    for ch in text:
+        depth += ch == "("
+        depth -= ch == ")"
+        if ch in ";\n" or (ch == "," and depth == 0):
+            parts.append(current)
+            current = ""
+        else:
+            current += ch
+    parts.append(current)
+    parts = [p2 for p in parts for p2 in re.split(r"\band\b", p)]
+    parts = [p.strip() for p in parts if p.strip()]
+    if len(parts) >= 2 and all(p.count("=") == 1 and not re.search(r"[<>]", p) for p in parts):
+        return parts
+    return None
+
+
 def _solve(text: str) -> MathResult:
+    if "[" in (text or ""):
+        from .matrix_tool import solve_matrix_problem  # matrices have their own parser
+        return solve_matrix_problem(text)
+    stripped = re.sub(r"^(solve|find)\b[:\s]*", "", (text or "").strip(), flags=re.IGNORECASE)
+    equations = _split_equations(stripped)
+    if equations:  # simultaneous equations typed together
+        return _solve_system([(e, f"Equation {k}") for k, e in enumerate(equations, 1)], None)
     s = normalize(text or "")
+    complex_result = _complex_problem(s)
+    if complex_result:
+        return complex_result
     _check_safe(s)
     lhs_text, rel, rhs_text = _split_relation(s)
     if rel is not None:
@@ -484,6 +644,8 @@ def _solve(text: str) -> MathResult:
 
     if not lhs.free_symbols:
         value = sp.simplify(lhs)
+        if value.is_number and value.is_real is False:  # complex: always show as a + bi
+            value = sp.simplify(sp.re(value)) + sp.simplify(sp.im(value)) * sp.I
         original = _parse(lhs_text, evaluate=False)
         return MathResult(
             ok=True, kind="evaluate", problem=_show(original),

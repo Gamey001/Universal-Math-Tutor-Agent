@@ -104,7 +104,10 @@ def _numbered(steps: list[str]) -> str:
 def _render_steps(steps: list[str], notes: list[str]) -> str:
     blocks = []
     for i, (step, note) in enumerate(zip(steps, notes), 1):
-        label, sep, math = step.rpartition(": ")
+        # Split at the first ": " (later ones belong to the math, e.g. "Real part: ...; imaginary part: ...").
+        label, sep, math = step.partition(": ")
+        if "=" in label:  # no real label, e.g. "For a 2 × 2 matrix, det = ad - bc = ..."
+            label, sep, math = "", "", step
         label = label.rstrip(".")  # reasons are often full sentences: "son." + ":" reads badly
         line = f"**{i}. {label}:** `{math}`" if sep else f"**{i}.** `{step}`"
         blocks.append(f"{line}  \n{note}" if note else line)

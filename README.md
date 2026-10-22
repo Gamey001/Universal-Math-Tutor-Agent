@@ -49,6 +49,18 @@ topic button ──────────────────────�
 | **Typed topic** ("I don't get fractions") | Concept lesson plus a verified practice problem. |
 | **Word or diagram problem** (ages, mixtures, angles in a figure…) | The reasoning model writes equations, each with its reason; SymPy solves them. Two independent setups must agree (and match an answer choice, if any). If a diagram can't be set up, the learner sees the diagram description and can correct it. |
 
+### What it can solve (with worked steps)
+
+| Area | Examples you can type (or photograph) |
+|---|---|
+| Arithmetic, fractions, percentages | `3/4 + 1/8`, `25% of 40`, `2 * (6 + 4)` |
+| Factorials and counting | `5!`, `5C2`, `10 choose 3`, `17 mod 5`, `gcd(12, 18)` |
+| Equations and inequalities | `2x + 3 = 11`, `-3x <= 9`, `x^2 - 5x + 6 = 0` (factoring or the quadratic formula) |
+| Simultaneous equations | `x + y = 10; x - y = 2` (also with commas or "and") |
+| Complex numbers | `(2 + 3i)(1 - i)`, `(1 + 2i) / (3 - i)`, `abs(3 + 4i)`, `polar(1 + i)`, `i^7`, `x^2 + 2x + 5 = 0` |
+| Matrices | `det [[1, 2], [3, 4]]`, `inverse of [[4, 7], [2, 6]]`, `[[1, 2], [3, 4]] * [[5, 6], [7, 8]]`, `eigenvalues of [[2, 1], [1, 2]]`, `rank`, `rref`, `trace`, `transpose`, `A^3`, `solve [[2, 1], [1, 3]] x = [3, 5]` |
+| Word and diagram problems | "Maria is 3 times as old as her son…", angle problems from a photo |
+
 ### Accuracy safeguards
 
 Small local models are good at language and unreliable at arithmetic and at reading blurry photos. So:
@@ -77,13 +89,14 @@ Small local models are good at language and unreliable at arithmetic and at read
 ```
 app.py               Streamlit UI (conversation, topic buttons, corrections, "how I checked this")
 tutor/graph.py       LangGraph state machine and routing
-tutor/math_tool.py   SymPy engine: parse safely, solve, generate steps, verify
+tutor/math_tool.py   SymPy engine: parse safely, solve, generate steps, verify (incl. complex numbers, systems)
+tutor/matrix_tool.py Matrix operations with their own eval-free parser
 tutor/explain.py     Tutor prose → number guard → final Markdown lesson
 tutor/services.py    Ollama calls (vision, transcription, text parsing, proxy problems)
 tutor/topics.py      Known topics + ready-made, verified practice problems
 tutor/images.py      Image loading, downscaling, blank detection
 tutor/prompts.py     Every prompt and every learner-facing fixed message
-tests/               83 tests; models are faked, so no Ollama needed
+tests/               123 tests; models are faked, so no Ollama needed
 ```
 
 ## Tests

@@ -37,6 +37,23 @@ TOPICS: tuple[Topic, ...] = (
     Topic("decimals", "Decimals", ("decimal", "point", "tenth", "hundredth"), (
         Proxy("An apple costs $0.75 and a banana costs $0.40. How much for both?", "0.75 + 0.40"),
     )),
+    Topic("complex_numbers", "Complex numbers", ("complex", "imaginary", "argand", "conjugate", "modulus"), (
+        Proxy("Add the complex numbers 2 + 3i and 1 - i.", "(2 + 3i) + (1 - i)"),
+        Proxy("Multiply 1 + 2i by 3 - i.", "(1 + 2i)(3 - i)"),
+        Proxy("How far is 3 + 4i from zero (its modulus)?", "abs(3 + 4i)"),
+    )),
+    Topic("matrices", "Matrices", ("matri", "determinant", "eigen", "inverse", "transpose", "linear algebra"), (
+        Proxy("Find the determinant of the matrix [[2, 1], [5, 3]].", "det [[2, 1], [5, 3]]"),
+        Proxy("Multiply [[1, 2], [3, 4]] by [[2, 0], [1, 2]].", "[[1, 2], [3, 4]] * [[2, 0], [1, 2]]"),
+        Proxy("Find the inverse of [[4, 7], [2, 6]].", "inverse [[4, 7], [2, 6]]"),
+    )),
+    Topic("simultaneous_equations", "Simultaneous equations",
+          ("simultaneous", "system of equations", "systems of equations", "two equations", "elimination"), (
+        Proxy("Two numbers add up to 10, and one is 2 more than the other. What are they?",
+              "x + y = 10; x - y = 2"),
+        Proxy("Pens cost $2 and notebooks $3. You buy 7 things for $17. How many of each?",
+              "p + n = 7; 2p + 3n = 17"),
+    )),
     Topic("quadratics", "Quadratic equations", ("quadratic", "squared", "parabola", "factoring", "factorising"), (
         Proxy("A square garden has an area of 49 square meters. How long is each side?", "x^2 = 49"),
         Proxy("Find the numbers x that make x² − 5x + 6 equal to zero.", "x^2 - 5x + 6 = 0"),
@@ -95,7 +112,7 @@ TOPIC_CHOICES: tuple[str, ...] = tuple(
     next(t.name for t in TOPICS if t.key == key)
     for key in ("addition_subtraction", "multiplication_division", "fractions", "decimals", "percentages",
                 "ratios", "order_of_operations", "exponents", "factorials_counting", "angles_triangles", "area_perimeter", "linear_equations",
-                "inequalities", "quadratics")
+                "inequalities", "simultaneous_equations", "quadratics", "complex_numbers", "matrices")
 )
 
 
