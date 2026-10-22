@@ -17,6 +17,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from . import prompts
+from .latex import is_prose, split_description, to_latex
 from .services import parse_json
 
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
@@ -101,21 +102,30 @@ def _numbered(steps: list[str]) -> str:
     return "\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1))
 
 
-def _render_steps(steps: list[str], notes: list[str]) -> str:
-    blocks = []
+def _display(latex: str) -> str:
+    """A centred, typeset line of math (KaTeX in Streamlit's Markdown)."""
+    return f"$$\n{latex.replace('$', '')}\n$$"
+
+
+def _render_steps(steps: list[str], notes: list[str], problem_latex: str = "") -> str:
+    """Laid out like a worked solution on paper: the problem, then "Step n: rule" with typeset math."""
+    blocks = [_display(problem_latex)] if problem_latex else []
     for i, (step, note) in enumerate(zip(steps, notes), 1):
         # Split at the first ": " (later ones belong to the math, e.g. "Real part: ...; imaginary part: ...").
         label, sep, math = step.partition(": ")
-        if "=" in label:  # no real label, e.g. "For a 2 × 2 matrix, det = ad - bc = ..."
-            label, sep, math = "", "", step
+        if "=" in label or not sep:  # no real label, e.g. "x = y + 2 → x = 6"
+            label, math = "", step
         label = label.rstrip(".")  # reasons are often full sentences: "son." + ":" reads badly
-        line = f"**{i}. {label}:** `{math}`" if sep else f"**{i}.** `{step}`"
-        blocks.append(f"{line}  \n{note}" if note else line)
+        heading = f"**Step {i}: {label}**" if label else f"**Step {i}**"
+        description, math = split_description(math)
+        body = math if is_prose(math) else _display(to_latex(math))
+        description = description[:1].upper() + description[1:] if description else ""
+        blocks.append("\n\n".join(part for part in (heading, description, body, note) if part))
     return "\n\n".join(blocks)
 
 
 def _render_answer(answer: str, verification: str, note: str) -> str:
-    parts = [f"**{answer}**", f"✔️ *Checked with SymPy.* {verification}"]
+    parts = [_display(rf"\boxed{{{to_latex(answer)}}}"), f"✔️ *Checked with SymPy.* {verification}"]
     if note:
         parts.append(note)
     return "\n\n".join(parts)
@@ -138,7 +148,7 @@ def explain_solution(llm: BaseChatModel, math: dict, original: str = "", legend:
         sections.append(("A picture to hold in your mind", data["picture"]))
     if steps:
         intro = f"Let {'; '.join(legend)}.\n\n" if legend else ""  # what each letter stands for
-        sections.append(("Step by step", intro + _render_steps(steps, data["step_notes"])))
+        sections.append(("Step by step", intro + _render_steps(steps, data["step_notes"], math.get("problem_latex", ""))))
     sections.append(("The answer", _render_answer(math["answer"], math["verification"], data["answer_note"])))
     sections.append(("You've got this", data["encouragement"] or prompts.DEFAULT_ENCOURAGEMENT))
     return Lesson(_markdown(sections), removed, retried)
@@ -171,7 +181,7 @@ def explain_topic(llm: BaseChatModel, topic: str, proxy: dict | None, situation:
     if proxy:
         practice = f"*{proxy['problem_text']}*"
         if steps:
-            practice += "\n\n" + _render_steps(steps, data["step_notes"])
+            practice += "\n\n" + _render_steps(steps, data["step_notes"], proxy["math"].get("problem_latex", ""))
         sections.append(("Let's practice", practice))
         sections.append(("The answer", _render_answer(proxy["math"]["answer"], proxy["math"]["verification"],
                                                       data["answer_note"])))

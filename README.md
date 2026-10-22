@@ -99,12 +99,14 @@ tutor/graph.py       LangGraph state machine and routing
 tutor/math_tool.py   SymPy engine: parse safely, solve, generate steps, verify (incl. complex numbers, systems)
 tutor/matrix_tool.py Matrix operations with their own eval-free parser
 tutor/calculus_tool.py Derivatives, integrals, limits, ODEs, Taylor series, each checked a second way
+tutor/latex.py       Step text → typeset math (fractions, ∫, matrices) for the whiteboard view
+tutor/ui.py          Page style and the handwritten-whiteboard lesson card
 tutor/explain.py     Tutor prose → number guard → final Markdown lesson
 tutor/services.py    Ollama calls (vision, transcription, text parsing, proxy problems)
 tutor/topics.py      Known topics + ready-made, verified practice problems
 tutor/images.py      Image loading, downscaling, blank detection
 tutor/prompts.py     Every prompt and every learner-facing fixed message
-tests/               159 tests; models are faked, so no Ollama needed
+tests/               223 tests; models are faked, so no Ollama needed
 ```
 
 ## Tests

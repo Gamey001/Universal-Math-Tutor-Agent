@@ -23,8 +23,8 @@ def test_unverified_numbers_are_detected():
 def test_clean_reply_is_rendered_with_math_from_sympy():
     llm = FakeListChatModel(responses=[reply()])
     lesson = explain_solution(llm, MATH)
-    assert "`34 + 18 = 52`" in lesson.markdown
-    assert "**52**" in lesson.markdown
+    assert "$$\n34 + 18 = 52\n$$" in lesson.markdown  # typeset step
+    assert "\\boxed{52}" in lesson.markdown
     assert not lesson.retried and not lesson.removed_numbers
 
 
@@ -48,7 +48,7 @@ def test_numbers_still_invented_after_retry_are_removed_by_sentence():
 def test_garbage_reply_still_gives_a_kind_verified_lesson():
     llm = FakeListChatModel(responses=["not json at all"])
     lesson = explain_solution(llm, MATH)
-    assert "**52**" in lesson.markdown
+    assert "\\boxed{52}" in lesson.markdown
     assert "You've got this" in lesson.markdown
 
 

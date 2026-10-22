@@ -13,21 +13,11 @@ from tutor import config
 from tutor.graph import ServiceUnavailable, build_graph, unconfirmed_readings
 from tutor.services import OllamaServices, installed_models
 from tutor.topics import TOPIC_CHOICES
+from tutor.ui import PAGE_CSS, lesson_html
 
 st.set_page_config(page_title="Slow & Steady Math Tutor", page_icon="🐢", layout="centered")
 
-st.markdown(
-    """
-    <style>
-      .block-container { max-width: 760px; padding-top: 2.5rem; }
-      .stMarkdown p, .stMarkdown li { font-size: 1.06rem; line-height: 1.75; }
-      h3 { margin-top: 1.4rem !important; color: #2f5d50; }
-      .tutor-note { color: #5b6b66; font-size: 0.95rem; }
-      .you-said { background: #eef4f1; border-radius: 12px; padding: 0.6rem 0.9rem; margin: 0.4rem 0 0.8rem; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+st.markdown(PAGE_CSS, unsafe_allow_html=True)
 
 # Friendly progress lines, shown while each graph node runs.
 PROGRESS = {
@@ -75,6 +65,7 @@ def sidebar() -> None:
         else:
             st.sidebar.warning(f"{label} not installed · `{name}`  \nRun `ollama pull {name}`")
     st.sidebar.divider()
+    st.sidebar.toggle("Handwritten whiteboard style", value=True, key="handwritten")
     if st.sidebar.button("Start fresh", width="stretch"):
         st.session_state.turns = []
         st.rerun()
@@ -227,7 +218,8 @@ def render_turn(turn: dict, is_latest: bool) -> None:
             else:
                 st.markdown(state["message"])
         else:
-            st.markdown(state.get("explanation", ""))
+            st.markdown(lesson_html(state.get("explanation", ""), st.session_state.get("handwritten", True)),
+                        unsafe_allow_html=True)
         render_details(state)
 
 

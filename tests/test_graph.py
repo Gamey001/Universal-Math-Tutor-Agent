@@ -193,8 +193,9 @@ def test_transcription_with_answer_appended_still_agrees(text_photo):
 def test_explanation_contains_verified_answer_and_steps():
     state = run({"text": "2x + 3 = 11"}, FakeServices())
     md = state["explanation"]
-    assert "**x = 4**" in md
-    assert "`2x = 8`" in md and "Keep the scale level." in md
+    assert "\\boxed{x = 4}" in md
+    assert "**Step 1: Take 3 away from both sides**" in md
+    assert "2 x = 8" in md and "Keep the scale level." in md
     assert "Checked with SymPy" in md
 
 

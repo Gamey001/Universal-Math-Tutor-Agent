@@ -91,7 +91,7 @@ def _result(problem: str, problem_latex: str, answer, steps: list[str], verifica
 def _det_steps(m: sp.Matrix) -> list[str]:
     if m.shape == (2, 2):
         a, b, c, d = m
-        return [f"For a 2 × 2 matrix, det = ad - bc = ({sp.sstr(a)})({sp.sstr(d)}) - ({sp.sstr(b)})({sp.sstr(c)})"
+        return [f"Determinant of a 2 × 2 matrix: det = ad - bc = ({sp.sstr(a)})({sp.sstr(d)}) - ({sp.sstr(b)})({sp.sstr(c)})"
                 f" = {sp.sstr(a * d)} - {sp.sstr(b * c)} = {sp.sstr(m.det())}"]
     if m.shape == (3, 3):
         steps = ["Expand along the first row: each entry times the determinant of what's left when you "
