@@ -192,3 +192,45 @@ def explain_topic(llm: BaseChatModel, topic: str, proxy: dict | None, situation:
 
 def _markdown(sections: list[tuple[str, str]]) -> str:
     return "\n\n".join(f"### {title}\n{body}" for title, body in sections)
+
+
+_VERIFIED_NOTE = {
+    "checked": "✔️ *Checked with SymPy:* my calculator solved it independently and got the same answer.",
+    "corrected": ("✔️ *Checked with SymPy:* my first attempt didn't match my calculator, so I re-checked my "
+                  "work and corrected it. Now both agree."),
+}
+
+
+def render_cloud_lesson(data: dict, verified: str, check_answer: str = "") -> str:
+    """A cloud solution laid out like the whiteboard lessons, with an honest verification label."""
+    clean = lambda latex: (latex or "").replace("$", "").strip()
+    sections = []
+    asking = data.get("problem", "").strip() or prompts.DEFAULT_ASKING
+    if clean(data.get("problem_latex")):
+        asking += "\n\n" + _display(clean(data["problem_latex"]))
+    sections.append(("What the question is asking", asking))
+    if data.get("picture", "").strip():
+        sections.append(("A picture to hold in your mind", data["picture"].strip()))
+    blocks = []
+    for i, step in enumerate(data.get("steps") or [], 1):
+        title = step.get("title", "").strip().rstrip(".:")
+        parts = [f"**Step {i}: {title}**" if title else f"**Step {i}**"]
+        if clean(step.get("latex")):
+            parts.append(_display(clean(step["latex"])))
+        if step.get("explanation", "").strip():
+            parts.append(step["explanation"].strip())
+        blocks.append("\n\n".join(parts))
+    if blocks:
+        sections.append(("Step by step", "\n\n".join(blocks)))
+    answer_latex = clean(data.get("final_answer_latex")) or to_latex(data.get("final_answer", ""))
+    if verified in _VERIFIED_NOTE:
+        note = _VERIFIED_NOTE[verified]
+    elif check_answer:
+        note = (f"⚠️ *Not confirmed:* my calculator got **{check_answer}** when it re-solved the problem, which "
+                "doesn't match. Please double-check this one with your teacher or textbook.")
+    else:
+        note = ("ℹ️ *Solved by the AI.* My calculator can't check this kind of problem on its own, so treat the "
+                "answer with a little care.")
+    sections.append(("The answer", f"{_display(rf'\boxed{{{answer_latex}}}')}\n\n{note}"))
+    sections.append(("You've got this", data.get("encouragement", "").strip() or prompts.DEFAULT_ENCOURAGEMENT))
+    return _markdown(sections)

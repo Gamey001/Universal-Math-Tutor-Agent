@@ -30,6 +30,7 @@ PROGRESS = {
     "fallback": "Choosing a practice example for us…",
     "ask_context": "Thinking about how best to help…",
     "tutor": "Writing your explanation, one step at a time…",
+    "cloud_solve": "Reading and solving it carefully, then double-checking with my calculator…",
 }
 
 
@@ -51,6 +52,17 @@ def sidebar() -> None:
         unsafe_allow_html=True,
     )
     st.sidebar.divider()
+    if config.OPENAI_API_KEY:
+        use_cloud = st.sidebar.toggle("Use the cloud solver (OpenAI)", value=True, key="use_cloud")
+        config.CLOUD = "auto" if use_cloud else "off"
+        if use_cloud:
+            st.sidebar.success(f"Cloud solver on · `{config.OPENAI_MODEL}`")
+            st.sidebar.caption("Your questions and photos are sent to OpenAI to be solved. "
+                               "The local models below take over automatically if the cloud isn't reachable.")
+        else:
+            st.sidebar.info("Cloud solver off: everything stays on this computer.")
+    else:
+        st.sidebar.info("Local only: add an OpenAI key to `.env` to turn on the cloud solver.")
     models = installed_models()
     if models is None:
         st.sidebar.error("Ollama isn't running. Start it with `ollama serve`, then refresh.")
@@ -145,9 +157,23 @@ def render_details(state: dict) -> None:
     attempts = state.get("attempts") or []
     guard = state.get("guard") or {}
     if not (attempts or state.get("math") or state.get("setups") or guard.get("retried")
-            or guard.get("removed_numbers")):
+            or guard.get("removed_numbers") or state.get("cloud_error")):
         return  # nothing worth showing, e.g. a typed topic question
     with st.expander("How I checked this"):
+        if state.get("cloud_error"):
+            st.markdown(f"- The cloud solver wasn't available ({state['cloud_error'][:120]}), "
+                        "so the local models answered.")
+        c = state.get("cloud") or {}
+        if c.get("found_math"):
+            st.markdown(f"- Solved by `{c['model']}` (cloud).")
+            check = c["data"].get("check_problem") or c["data"].get("check_expression")
+            if check:
+                st.markdown(f"- My calculator (SymPy) re-solved `{check}` on its own"
+                            + (f" and got `{c['check_answer']}`." if c.get("check_answer") else ", but couldn't finish it."))
+            verdict = {"checked": "They agree ✔️", "corrected": "The first answer didn't match; after re-checking, they agree ✔️",
+                       "unchecked": "This answer could not be confirmed by the calculator."}[c["verified"]]
+            st.markdown(f"- {verdict}")
+            return
         for a in attempts:
             if a["error"]:
                 st.markdown(f"- `{a['model']}` couldn't run: {a['error'][:160]}")

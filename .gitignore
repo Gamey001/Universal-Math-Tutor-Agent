@@ -10,3 +10,8 @@ eval/images/*_screenshot.png
 eval/images/whiteboard_x3_ln.png
 eval/images/pq_expression.png
 eval/results/
+
+# Secrets: API keys live here, never in code or git
+.env
+.env.*
+!.env.example
