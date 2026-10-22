@@ -92,9 +92,21 @@ class MathInputError(ValueError):
     pass
 
 
+_SUPERSCRIPTS = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺", "0123456789-+")
+SUBSCRIPTS = str.maketrans("₀₁₂₃₄₅₆₇₈₉₋₊", "0123456789-+")
+_VULGAR = {"½": "(1/2)", "⅓": "(1/3)", "⅔": "(2/3)", "¼": "(1/4)", "¾": "(3/4)"}
+
+
+def unicode_math(s: str) -> str:
+    """u⁻² -> u^(-2), x³ -> x^(3), ½ -> (1/2): how vision models often write what they see."""
+    for old, new in _VULGAR.items():
+        s = s.replace(old, new)
+    return re.sub(r"[⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]+", lambda m: "^(" + m.group(0).translate(_SUPERSCRIPTS) + ")", s)
+
+
 def normalize(text: str) -> str:
     """Turn handwriting-ish / unicode math into something SymPy can parse."""
-    s = text.strip()
+    s = unicode_math(text.strip())
     # "Solve: 2x + 3 = 11" / "Simplify ..." / "What is ..."
     s = re.sub(r"^(solve|simplify|evaluate|calculate|compute|find|what is|work out)\b[:\s]*",
                "", s, flags=re.IGNORECASE)

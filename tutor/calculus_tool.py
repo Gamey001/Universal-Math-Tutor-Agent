@@ -13,7 +13,7 @@ import re
 import sympy as sp
 from sympy.integrals.manualintegrate import integral_steps
 
-from .math_tool import MathInputError, MathResult, _check_safe, _parse, _pick_variable, normalize
+from .math_tool import SUBSCRIPTS, MathInputError, MathResult, _check_safe, _parse, _pick_variable, normalize
 
 MAX_STEPS = 12
 
@@ -460,8 +460,10 @@ def _taylor(f: sp.Expr, x: sp.Symbol, a: sp.Expr, n: int) -> MathResult:
 
 def _strip(text: str) -> str:
     s = text.strip().rstrip("?. ")
-    return re.sub(r"^(please\s+)?(find|compute|calculate|work out|what is|evaluate|solve)\b[:\s]*(the\s+)?", "", s,
-                  flags=re.IGNORECASE)
+    s = re.sub(r"^(please\s+)?(find|compute|calculate|work out|what is|evaluate|solve)\b[:\s]*(the\s+)?", "", s,
+               flags=re.IGNORECASE)
+    # A label in front of the problem, as in "I = ∫ ..." or "A = lim ...", isn't part of the math.
+    return re.sub(r"^[A-Za-z]\s*=\s*(?=∫|integral|lim|d/d|derivative)", "", s, flags=re.IGNORECASE)
 
 
 def solve_calculus_problem(text: str) -> MathResult:
@@ -506,6 +508,10 @@ def solve_calculus_problem(text: str) -> MathResult:
             lower, upper, body = m.group(1), m.group(2), body[:m.start()] + " " + body[m.end():]
         if m := re.search(r"∫\s*_\{?([^}\s^]+)\}?\s*\^\{?([^}\s]+)\}?", body):
             lower, upper, body = m.group(1), m.group(2), body[:m.start()] + " " + body[m.end():]
+        elif m := re.search(r"∫\s*([₀₁₂₃₄₅₆₇₈₉₋₊]+)\s*([⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]+)", body):  # ∫₀¹, as vision models write it
+            sup = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺", "0123456789-+")
+            lower, upper = m.group(1).translate(SUBSCRIPTS), m.group(2).translate(sup)
+            body = body[:m.start()] + " " + body[m.end():]
         body = re.sub(r"^\s*(?:the\s+)?(?:definite\s+|indefinite\s+)?(?:integral|integrate|anti-?derivative)\s*(?:of\s+)?"
                       r"|∫", " ", body, flags=re.IGNORECASE)
         given = None

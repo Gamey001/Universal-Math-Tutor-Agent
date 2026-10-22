@@ -41,6 +41,7 @@ from .explain import explain_solution, explain_topic
 from .images import detect_image_issue, prepare_for_model
 import sympy as sp
 
+from .calculus_tool import looks_like_calculus
 from .math_tool import normalize, solve_problem, solve_system
 from .services import OllamaServices, TutorServices, normalize_extraction
 from .topics import match_topic, pick_proxy
@@ -100,12 +101,23 @@ def can_solve(extraction: dict | None) -> bool:
     return solve_problem(extraction["expression"]).ok
 
 
+def _is_bare_expression(expression: str, problem_text: str) -> bool:
+    """An expression with a variable but no question (no =, not calculus, no 'simplify/expand/factor')."""
+    if not expression:
+        return False
+    result = solve_problem(expression)
+    asked = re.search(r"simplif|expand|factori[sz]e|factor\b", problem_text or "", re.IGNORECASE)
+    return result.ok and result.kind == "simplify" and not asked
+
+
 def needs_setup(extraction: dict | None) -> bool:
     """A clearly read, specific problem with no directly solvable expression (word or diagram problem)."""
     if not extraction or extraction.get("legibility") != "clear":
         return False
     if not extraction.get("problem_text") or not extraction.get("specific", True):
         return False
+    if looks_like_calculus(extraction["problem_text"]):
+        return False  # setups write equations; calculus that didn't parse goes to a lesson instead
     return not can_solve(extraction)
 
 
@@ -152,10 +164,18 @@ def build_graph(services: TutorServices | None = None):
                 and not solve_problem(extraction["expression"]).ok):
             try:
                 from_text = services.extract_from_text(extraction["problem_text"])
-                extraction["expression"] = from_text["expression"] or extraction["expression"]
+                restated = from_text["expression"]
+                # Restating can silently drop the operation (an integral becoming just its
+                # integrand), so it may only fill a gap, never replace calculus we did read.
+                if restated and not looks_like_calculus(extraction["expression"]) and not _is_bare_expression(
+                        restated, extraction["problem_text"]):
+                    extraction["expression"] = restated
                 extraction["topic"] = extraction["topic"] or from_text["topic"]
             except Exception:
                 pass
+        if _is_bare_expression(extraction["expression"], extraction["problem_text"]):
+            # "4x/(x+1)^3" alone isn't a question: re-printing it as "the answer" would be nonsense.
+            extraction = {**extraction, "expression": ""}
 
         # Second, independent read before trusting any numbers.
         if can_solve(extraction):

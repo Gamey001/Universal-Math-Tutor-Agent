@@ -196,3 +196,41 @@ def test_explanation_contains_verified_answer_and_steps():
     assert "**x = 4**" in md
     assert "`2x = 8`" in md and "Keep the scale level." in md
     assert "Checked with SymPy" in md
+
+
+# --- Photos of calculus -------------------------------------------------------
+
+INTEGRAL_READ = {"legibility": "clear", "problem_text": "I = ∫₀¹ 4x / (1+x)³ dx\nLet u = 1+x ...",
+                 "expression": "I = ∫₀¹ 4x / (1+x)³ dx", "topic": "Calculus", "confidence": 1.0}
+
+
+def test_photo_of_definite_integral_is_solved(text_photo):
+    services = FakeServices(reads={"primary": INTEGRAL_READ},
+                            transcriptions={"primary": "I = ∫₀¹ 4x/(1+x)³ dx\nLet u = 1+x ..."})
+    state = run({"image": text_photo}, services)
+    assert state["status"] == "solved"
+    assert state["math"]["answer"] == "1/2"
+
+
+def test_restating_never_drops_the_integral(text_photo):
+    unparsable = {**INTEGRAL_READ, "expression": "I = ∫ weird ⌠ notation dx"}
+    services = FakeServices(reads={"primary": unparsable, "backup": unparsable},
+                            text_extractions=[{"expression": "4*x/(x+1)**3", "topic": "calculus", "problem_text": ""}] * 2)
+    state = run({"image": text_photo}, services)
+    assert state.get("math", {}).get("answer") != "4x/(x + 1)^3"
+    assert state["status"] == "fallback"  # a calculus lesson, not a fake "simplified" answer
+    assert not any(c[0] == "formulate" for c in services.calls)
+
+
+def test_bare_expression_from_photo_is_not_an_answer(text_photo):
+    bare = {"legibility": "clear", "problem_text": "4x/(x+1)^3", "expression": "4x/(x+1)^3",
+            "topic": "algebra", "confidence": 1.0}
+    state = run({"image": text_photo}, FakeServices(reads={"primary": bare, "backup": bare}))
+    assert state["status"] != "solved"
+
+
+def test_photo_asking_to_expand_is_still_solved(text_photo):
+    ask = {"legibility": "clear", "problem_text": "Expand (x+1)^2", "expression": "(x+1)^2",
+           "topic": "algebra", "confidence": 1.0}
+    state = run({"image": text_photo}, FakeServices(reads={"primary": ask}, transcriptions={"primary": "Expand (x+1)^2"}))
+    assert state["status"] == "solved"
