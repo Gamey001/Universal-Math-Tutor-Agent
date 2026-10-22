@@ -184,7 +184,9 @@ class OllamaServices:
             {"type": "text", "text": prompt},
             {"type": "image_url", "image_url": f"data:image/png;base64,{b64}"},
         ])
-        llm = ChatOllama(model=model, base_url=self.base_url, temperature=0, format="json" if json_mode else None)
+        # qwen3-vl thinks by default; reading a photo doesn't need it, and it's much slower.
+        llm = ChatOllama(model=model, base_url=self.base_url, temperature=0, format="json" if json_mode else None,
+                         reasoning=False if model.startswith("qwen3") else None)
         try:
             return llm.invoke([message]).content
         except Exception as exc:
