@@ -185,10 +185,15 @@ def render_details(state: dict) -> None:
 
 def render_diagram_fix(turn: dict, state: dict) -> None:
     """Small vision models misread diagrams; let the learner correct the description and retry."""
-    st.markdown("I couldn't set this one up with confidence, and I may have misread the diagram. "
-                "**Here's what I saw.** If anything is wrong or missing, fix it and I'll try again:")
+    setups = state.get("setups") or []
+    if any(s.get("result", {}).get("ok") for s in setups):
+        why = "My two attempts at setting it up came out differently, so I didn't trust either answer."
+    else:
+        why = "I couldn't turn it into something my calculator can check."
+    st.markdown(f"{why} **Here's what I read from your photo.** If anything is wrong or missing, "
+                "fix it and I'll try again:")
     with st.form(key=f"diagram-{turn['id']}", border=False):
-        fixed = st.text_area("What the diagram shows", value=state["diagram"], height=220,
+        fixed = st.text_area("What I read", value=state["diagram"], height=220,
                              label_visibility="collapsed")
         if st.form_submit_button("Try again with this", type="primary") and fixed.strip():
             problem = state["extraction"].get("problem_text") or "Solve the problem in the diagram."

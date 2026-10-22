@@ -178,7 +178,11 @@ Reply with ONLY a JSON object:
 "equations": a list of {{"equation": one equation using = (use * for times, ^ for powers, only numbers and
              the unknown names), "reason": the math fact or problem sentence that justifies it,
              in plain words}}. Write exactly as many independent equations as unknowns.
-"target": the name of the unknown the question asks for.
+"target": the name of the unknown the question asks for ("" if it asks for an expression instead).
+"target_expression": if the question asks for the value of an EXPRESSION built from the unknowns
+            (e.g. "find x^2 + y^2", "the simplified value of p^2(x+y)^2 + ..."), write that expression here,
+            using * for multiplication between letters (4*p*q*x*y, not 4pqxy). Otherwise "".
+            Then "equations" are just the given facts; they don't need to pin down every unknown.
 "choices": the answer choices as plain numbers (e.g. [25, 35, 45, 50]), or [] if there are none.
 
 Rules: every equation must follow from a stated fact in the problem or a standard math rule

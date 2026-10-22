@@ -104,8 +104,28 @@ def normalize_setup(raw: dict) -> dict:
                     text = text.replace(name.replace("_", " "), name)
             equations.append({"equation": text, "reason": _text(e.get("reason"))})
 
-    names = []
+    target_expression = _text(raw.get("target_expression")).replace(" ", " ")
+    singles = {n for n in meanings if re.fullmatch(r"[a-z]", n)}
     for e in equations:
+        for name in _IDENTIFIER.findall(e["equation"]) + _IDENTIFIER.findall(target_expression):
+            if re.fullmatch(r"[a-z]", name):
+                singles.add(name)
+
+    def split_products(text: str) -> str:
+        """'4pqxy' -> '4p*q*x*y' when every letter is already a one-letter unknown."""
+        def fix(m: re.Match) -> str:
+            word = m.group(0)
+            if word.lower() in _KEEP_NAMES or word in meanings or not set(word) <= singles or len(word) < 2:
+                return word
+            return "*".join(word)
+        return _IDENTIFIER.sub(fix, text)
+
+    for e in equations:
+        e["equation"] = split_products(e["equation"])
+    target_expression = split_products(target_expression)
+
+    names = []
+    for e in equations + [{"equation": target_expression}]:
         for name in _IDENTIFIER.findall(e["equation"]):
             if name.lower() not in _KEEP_NAMES and name not in names:
                 names.append(name)
@@ -123,13 +143,15 @@ def normalize_setup(raw: dict) -> dict:
 
     for e in equations:
         e["equation"] = apply(e["equation"])
+    target_expression = apply(target_expression)
     unknowns = []
     for name in names:
         meaning = meanings.get(name) or name.replace("_", " ")
         unknowns.append({"name": rename.get(name, name), "meaning": meaning})
     target = _text(raw.get("target")).replace(" ", "_")
     choices = [n for n in (_number_or_none(c) for c in raw.get("choices") or []) if n is not None]
-    return {"unknowns": unknowns, "equations": equations, "target": rename.get(target, target), "choices": choices}
+    return {"unknowns": unknowns, "equations": equations, "target": rename.get(target, target),
+            "target_expression": target_expression, "choices": choices}
 
 
 class OllamaServices:

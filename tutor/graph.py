@@ -42,7 +42,7 @@ from .images import detect_image_issue, prepare_for_model
 import sympy as sp
 
 from .calculus_tool import looks_like_calculus
-from .math_tool import normalize, solve_problem, solve_system
+from .math_tool import evaluate_given, normalize, solve_problem, solve_system
 from .services import OllamaServices, TutorServices, normalize_extraction
 from .topics import match_topic, pick_proxy
 
@@ -149,13 +149,26 @@ def agreed_setup(setups: list[dict]) -> dict | None:
     and that value must match an answer choice when the problem has choices."""
     if not setups or any(not s.get("result", {}).get("ok") for s in setups):
         return None
-    targets = [_as_number(s["result"]["values"].get(s["target"], "")) for s in setups]
-    if any(t is None for t in targets) or any(abs(t - targets[0]) > 1e-9 for t in targets):
+    answers = [s["result"]["values"].get("value") or s["result"]["values"].get(s["target"], "") for s in setups]
+    if not all(answers) or any(not _same_value(a, answers[0]) for a in answers[1:]):
         return None
+    number = _as_number(answers[0])
     choices = [c for s in setups for c in s.get("choices", [])]
-    if choices and not any(abs(c - targets[0]) < 1e-6 for c in choices):
+    if choices and number is not None and not any(abs(c - number) < 1e-6 for c in choices):
         return None
     return setups[0]
+
+
+def _same_value(a: str, b: str) -> bool:
+    """Numbers compared numerically; symbolic answers like 2(p + q) compared algebraically."""
+    x, y = _as_number(a), _as_number(b)
+    if x is not None and y is not None:
+        return abs(x - y) <= 1e-9 * max(1.0, abs(y))
+    try:
+        from .math_tool import _parse
+        return sp.simplify(_parse(normalize(a.split(" (")[0])) - _parse(normalize(b.split(" (")[0]))) == 0
+    except Exception:
+        return False
 
 
 def _rank(extraction: dict) -> tuple:
@@ -286,8 +299,11 @@ def build_graph(services: TutorServices | None = None):
                 except Exception as exc:
                     batch.append({"error": str(exc), "result": {"ok": False}, "think": think})
                     continue
-                result = solve_system([(e["equation"], e["reason"]) for e in setup["equations"]],
-                                      setup["target"] or None)
+                facts = [(e["equation"], e["reason"]) for e in setup["equations"]]
+                if setup.get("target_expression"):  # "find the value of p^2(x+y)^2 + ..." given the facts
+                    result = evaluate_given(facts, setup["target_expression"])
+                else:
+                    result = solve_system(facts, setup["target"] or None)
                 batch.append({**setup, "result": result.to_dict(), "think": think})
             setups += batch
             chosen = agreed_setup(batch)

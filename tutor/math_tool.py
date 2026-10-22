@@ -490,7 +490,7 @@ def _solve_relation(lhs_text: str, rel: str, rhs_text: str) -> MathResult:
 def _tidy(text: str) -> str:
     """SymPy's "2*x**2" -> the "2x^2" learners see in books."""
     text = text.replace("**", "^")
-    text = re.sub(r"(?<![\w.])(\d+(?:\.\d+)?)\*(?=[a-z(])", r"\1", text)  # 2*x -> 2x, 3*(x+1) -> 3(x+1)
+    text = re.sub(r"(?<![\w.])(\d+(?:\.\d+)?)\*(?=[a-zA-HJ-Z(])", r"\1", text)  # 2*x -> 2x, 2*B -> 2B (not I: imaginary unit)
     text = text.replace(")*(", ")(")
     text = re.sub(r"factorial\((\w+)\)", r"\1!", text)  # factorial(5) -> 5!
     text = re.sub(r"\*I\b", "i", text)  # SymPy's imaginary unit: 4*I -> 4i
@@ -813,3 +813,122 @@ def _solve_system(equations: list[tuple[str, str]], target: str | None) -> MathR
                      f"all {len(parsed)} equations balance.",
         values=values,
     )
+
+
+def evaluate_given(equations: list[tuple[str, str]], target_text: str) -> MathResult:
+    """The value of an expression, given some facts: "if p(x+y)^2 = 5 and q(x-y)^2 = 3, find ...".
+
+    If the facts pin every unknown down, substitute. Otherwise rewrite the expression
+    using the facts (Gröbner basis reduction), which also proves the two are equal.
+    """
+    try:
+        return _tidied(_evaluate_given(equations, target_text))
+    except MathInputError as exc:
+        return MathResult(ok=False, error=str(exc))
+    except Exception:
+        return MathResult(ok=False, error="I couldn't check that with my calculator.")
+
+
+MAX_GIVEN_SYMBOLS = 6
+
+
+def _evaluate_given(equations: list[tuple[str, str]], target_text: str) -> MathResult:
+    import itertools
+
+    if not equations or len(equations) > MAX_SYSTEM_EQUATIONS:
+        raise MathInputError("I need between one and ten facts to work with.")
+    facts = []  # (shown, reason, lhs, rhs)
+    for text, reason in equations:
+        s = normalize(text)
+        _check_safe(s)
+        lhs_text, rel, rhs_text = _split_relation(s)
+        if rel != "=":
+            raise MathInputError("The given facts need to be equations (with =).")
+        facts.append((s, reason.strip(), _parse(lhs_text), _parse(rhs_text)))
+    target_s = normalize(target_text)
+    _check_safe(target_s)
+    target = _parse(target_s)
+    polys = [sp.numer(sp.together(lhs - rhs)) for _, _, lhs, rhs in facts]
+    symbols = sorted(set().union(target.free_symbols, *(p.free_symbols for p in polys)), key=str)
+    if not symbols or len(symbols) > MAX_GIVEN_SYMBOLS:
+        raise MathInputError("That has too many letters for me to check.")
+    shown_target = _show(_parse(target_s, evaluate=False))
+    names = [sp.Symbol(c) for c in "ABCDEFGH" if sp.Symbol(c) not in symbols][:len(facts)]
+    named = [(n, lhs, rhs) for n, (_, _, lhs, rhs) in zip(names, facts) if not rhs.free_symbols and lhs.free_symbols]
+
+    # 1. The textbook route: name each known quantity (A = x + y = 5, B = xy = 6) and rewrite the
+    #    expression in those names alone (x^2 + y^2 = A^2 - 2B), without solving for x and y.
+    if (named and len(named) == len(facts) and target.is_polynomial(*symbols)
+            and not all(lhs.is_Symbol for _, lhs, _ in named)
+            and all(lhs.is_polynomial(*symbols) for _, lhs, _ in named)):
+        for order in itertools.permutations(symbols) if len(symbols) <= 5 else [tuple(symbols)]:
+            naming = sp.groebner([n - lhs for n, lhs, _ in named], *order, *[n for n, _, _ in named], order="lex")
+            rewritten = sp.factor(naming.reduce(target)[1])
+            if rewritten.free_symbols and not rewritten.free_symbols & set(symbols):
+                plugged = rewritten.subs({n: rhs for n, _, rhs in named}, simultaneous=True)
+                value = sp.factor(plugged)
+                exact = sp.expand(rewritten.subs({n: lhs for n, lhs, _ in named}) - target) == 0
+                return MathResult(
+                    ok=True, kind="evaluate_given", problem=f"{shown_target}, given {'; '.join(f[0] for f in facts)}",
+                    problem_latex=sp.latex(target), answer=_fmt(value), answer_latex=sp.latex(value),
+                    steps=["Give the known quantities short names: "
+                           + "; ".join(f"{n} = {sp.sstr(lhs)} = {_fmt(rhs)}" for n, lhs, rhs in named),
+                           f"Rewrite the expression using only those names: {shown_target} = {sp.sstr(rewritten)}",
+                           f"Put in the known values: "
+                           f"{sp.sstr(rewritten.subs({n: sp.Symbol(f'({rhs})') for n, _, rhs in named}))} = {_fmt(value)}"],
+                    verification=("Expanding the names back out gives exactly the original expression"
+                                  + (" ✔" if exact else " ✘")),
+                    values={"value": _fmt(value)})
+
+    # 2. Facts that pin every unknown down: just substitute.
+    try:
+        solutions = sp.solve(polys, symbols, dict=True)
+    except Exception:
+        solutions = []
+    values = {sp.simplify(target.subs(sol)) for sol in solutions if set(sol) == set(symbols)}
+    if solutions and len(values) == 1 and all(set(sol) == set(symbols) for sol in solutions):
+        value = values.pop()
+        sol = solutions[0]
+        return MathResult(
+            ok=True, kind="evaluate_given", problem=f"{shown_target}, given {'; '.join(f[0] for f in facts)}",
+            problem_latex=sp.latex(target), answer=_fmt(value), answer_latex=sp.latex(value),
+            steps=[f"{reason or 'From the facts'}: {shown}" for shown, reason, _, _ in facts]
+            + [f"These pin down {', '.join(f'{k} = {_fmt(v)}' for k, v in sol.items())}",
+               f"Put them into {shown_target} = {_fmt(value)}"],
+            verification="The value is the same for every solution of the facts.",
+            values={"value": _fmt(value)})
+
+    # 3. Rewrite the expression using the facts (Gröbner basis reduction), keeping the simplest result.
+    best = None
+    orders = itertools.permutations(symbols) if len(symbols) <= 5 else [tuple(symbols)]
+    for order in orders:
+        basis = sp.groebner(polys, *order, order="lex")
+        remainder = sp.factor(basis.reduce(target)[1])
+        key = (len(remainder.free_symbols), sp.count_ops(remainder))
+        if best is None or key < best[0]:
+            best = (key, remainder, order, basis)
+    _, value, order, basis = best
+    if sp.simplify(value - target) == 0:
+        raise MathInputError("The given facts don't simplify this expression.")
+    proven = basis.reduce(sp.expand(target - value))[1] == 0
+
+    # Show HOW the facts are used: name each given quantity (A = p(x+y)^2 = 5, ...).
+    steps = []
+    if named:
+        naming = sp.groebner([n - lhs for n, lhs, _ in named], *order, *[n for n, _, _ in named], order="lex")
+        rewritten = sp.factor(naming.reduce(target)[1])
+        if any(rewritten.has(n) for n, _, _ in named) and not rewritten.has(*[s for s in symbols if s not in value.free_symbols]):
+            steps.append("Give the known quantities short names: "
+                         + "; ".join(f"{n} = {sp.sstr(lhs)} = {_fmt(rhs)}" for n, lhs, rhs in named))
+            steps.append(f"Rewrite the expression using those names: {shown_target} = {sp.sstr(rewritten)}")
+            steps.append(f"Put in the known values ({', '.join(f'{n} = {_fmt(rhs)}' for n, _, rhs in named)}): "
+                         f"{sp.sstr(rewritten.subs({n: rhs for n, _, rhs in named}))} = {sp.sstr(value)}")
+    if not steps:
+        steps = [f"{reason or 'Given'}: {shown}" for shown, reason, _, _ in facts]
+        steps.append(f"Use these facts to rewrite the expression: {shown_target} = {sp.sstr(value)}")
+    return MathResult(
+        ok=True, kind="evaluate_given", problem=f"{shown_target}, given {'; '.join(f[0] for f in facts)}",
+        problem_latex=sp.latex(target), answer=sp.sstr(value), answer_latex=sp.latex(value), steps=steps,
+        verification=("Using only the given facts, SymPy proves the expression equals " + sp.sstr(value)
+                      + (" ✔" if proven else " ✘")),
+        values={"value": sp.sstr(value)})
