@@ -81,9 +81,12 @@ class FakeServices:
         self.calls.append(("formulate", problem))
         return self._setups.pop(0) if self._setups else {"unknowns": [], "equations": [], "target": "", "choices": []}
 
-    def extract_from_text(self, text):
+    def extract_from_text(self, text, attempt=0):
         self.calls.append(("extract_from_text", text))
-        return self._text.pop(0) if self._text else {"expression": "", "topic": "", "problem_text": ""}
+        if len(self._text) > 1:
+            return self._text.pop(0)
+        # The last scripted translation repeats, so cross-checks agree unless a test says otherwise.
+        return dict(self._text[0]) if self._text else {"expression": "", "topic": "", "problem_text": ""}
 
     def make_proxy(self, topic):
         self.calls.append(("make_proxy", topic))

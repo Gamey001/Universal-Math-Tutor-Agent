@@ -28,7 +28,7 @@ class TutorServices(Protocol):
     def read_image(self, model: str, image_png: bytes) -> dict: ...
     def transcribe_image(self, model: str, image_png: bytes) -> str: ...
     def describe_image(self, model: str, image_png: bytes) -> str: ...
-    def extract_from_text(self, text: str) -> dict: ...
+    def extract_from_text(self, text: str, attempt: int = 0) -> dict: ...
     def make_proxy(self, topic: str) -> dict: ...
     def formulate(self, problem: str, diagram: str, think: bool = False) -> dict: ...
 
@@ -224,8 +224,12 @@ class OllamaServices:
         data = parse_json(llm.invoke(prompts.FORMULATE_PROMPT.format(problem=problem, diagram=diagram_block)).content)
         return normalize_setup(data) | {"model": model}
 
-    def extract_from_text(self, text: str) -> dict:
-        reply = self._chat_json.invoke(prompts.TEXT_EXTRACTION_PROMPT.format(text=text))
+    def extract_from_text(self, text: str, attempt: int = 0) -> dict:
+        """Words -> math. attempt > 0 samples an independent second translation to cross-check the first."""
+        llm = self._chat_json if attempt == 0 else ChatOllama(
+            model=self.chat_model, base_url=self.base_url, format="json", temperature=0.7,
+            reasoning=False if self.chat_model.startswith("qwen3") else None)
+        reply = llm.invoke(prompts.TEXT_EXTRACTION_PROMPT.format(text=text))
         data = parse_json(reply.content)
         return {
             "expression": _text(data.get("expression")),

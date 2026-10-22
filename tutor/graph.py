@@ -269,10 +269,20 @@ def build_graph(services: TutorServices | None = None):
         else:
             try:
                 parsed = services.extract_from_text(text)
+                expression = parsed["expression"]
+                if expression and _is_bare_expression(expression, text):
+                    expression = ""  # "x^2 + y^2" alone isn't the question; the facts matter (setup handles it)
+                if expression:
+                    # A model translated words into math. Trust it only if an independent second
+                    # translation gives the same answer (one translation once turned a mean into a sum).
+                    second = services.extract_from_text(text, attempt=1)["expression"]
+                    first_result, second_result = solve_problem(expression), solve_problem(second)
+                    if not (first_result.ok and second_result.ok and first_result.answer == second_result.answer):
+                        expression = ""  # disagreement: the careful, cross-checked setup takes over
             except Exception as exc:
                 raise ServiceUnavailable(str(exc)) from exc
             extraction = {"legibility": "clear", "problem_text": parsed["problem_text"] or text,
-                          "expression": parsed["expression"], "topic": parsed["topic"], "confidence": 1.0,
+                          "expression": expression, "topic": parsed["topic"], "confidence": 1.0,
                           # a topic request ("I don't get fractions") has neither of these
                           "specific": bool(parsed["problem_text"] or parsed["expression"])}
         return {"source": "text", "extraction": extraction}

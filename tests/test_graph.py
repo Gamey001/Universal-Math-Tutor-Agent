@@ -253,3 +253,29 @@ def test_problem_lines_strip_labels():
     from tutor.graph import problem_lines
     assert problem_lines("Solution: ∫x dx\nStep 1: power rule\n= x^2/2") == ["∫x dx", "= x^2/2"]
     assert problem_lines("1) 2x + 3 = 11") == ["2x + 3 = 11"]
+
+
+# --- Typed word problems are cross-checked --------------------------------------
+
+def test_disagreeing_translations_go_to_careful_setup():
+    question = "What is the mean of 4, 8, 15, 16, 23, 42?"
+    sum_only = {"expression": "4 + 8 + 15 + 16 + 23 + 42", "topic": "statistics", "problem_text": question}
+    mean = {"expression": "(4 + 8 + 15 + 16 + 23 + 42)/6", "topic": "statistics", "problem_text": question}
+    setup = {"unknowns": [{"name": "m", "meaning": "mean"}],
+             "equations": [{"equation": "m = (4 + 8 + 15 + 16 + 23 + 42)/6", "reason": "mean = total / count"}],
+             "target": "m", "target_expression": "", "choices": []}
+    services = FakeServices(text_extractions=[sum_only, mean], setups=[setup, setup])
+    state = run({"text": question}, services)
+    assert state["status"] == "solved"
+    assert state["math"]["answer"] == "m = 18"  # not 108
+
+
+def test_typed_facts_question_is_not_answered_with_the_bare_expression():
+    question = "If x + y = 5 and xy = 6, find x^2 + y^2"
+    bare = {"expression": "x^2 + y^2", "topic": "algebra", "problem_text": question}
+    setup = {"unknowns": [], "equations": [{"equation": "x + y = 5", "reason": "given"},
+                                           {"equation": "x*y = 6", "reason": "given"}],
+             "target": "", "target_expression": "x^2 + y^2", "choices": []}
+    state = run({"text": question}, FakeServices(text_extractions=[bare], setups=[setup, setup]))
+    assert state["status"] == "solved"
+    assert state["math"]["answer"] == "13"
