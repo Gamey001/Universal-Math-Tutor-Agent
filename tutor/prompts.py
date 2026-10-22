@@ -13,6 +13,8 @@ Look carefully at the image and reply with ONLY a JSON object with these keys:
               Special notation: write a matrix row by row as [[a, b], [c, d]] after its operation
               (det, inverse, transpose, eigenvalues, rank), write the imaginary unit as i (a + bi),
               and separate simultaneous equations with ; (first equation; second equation).
+              Calculus: "derivative of f", "integral of f dx", "integral from a to b of f dx",
+              "limit of f as x -> a", differential equations with y' and y'' (e.g. "y' = ..., y(0) = ...").
               Use "" if the numbers are not clear or there is no calculation.
 "topic": the area of math this belongs to (a few words, such as the name of a school math topic).
          Fill this in even when the numbers are unreadable, if you can tell what kind of problem it is.
@@ -34,6 +36,8 @@ Reply with ONLY a JSON object with these keys:
               Special notation: write a matrix row by row as [[a, b], [c, d]] after its operation
               (det, inverse, transpose, eigenvalues, rank), write the imaginary unit as i (a + bi),
               and separate simultaneous equations with ; (first equation; second equation).
+              Calculus: "derivative of f", "integral of f dx", "integral from a to b of f dx",
+              "limit of f as x -> a", differential equations with y' and y'' (e.g. "y' = ..., y(0) = ...").
 "topic": the area of math the learner is asking about (e.g. "fractions", "linear equations",
          "percentages"), or "" if the message is not about math at all or is too vague to tell.
 "problem_text": the problem in clean words, or "" if there is no specific problem.

@@ -37,6 +37,26 @@ TOPICS: tuple[Topic, ...] = (
     Topic("decimals", "Decimals", ("decimal", "point", "tenth", "hundredth"), (
         Proxy("An apple costs $0.75 and a banana costs $0.40. How much for both?", "0.75 + 0.40"),
     )),
+    Topic("differential_equations", "Differential equations",
+          ("differential equation", "dy/dx", "ode", "y'", "growth and decay"), (
+        Proxy("A population grows at a rate equal to twice its size, starting at 3. Find y(x).", "y' = 2y, y(0) = 3"),
+        Proxy("Solve y'' + y = 0 with y(0) = 0 and y'(0) = 1.", "y'' + y = 0, y(0) = 0, y'(0) = 1"),
+    )),
+    Topic("derivatives", "Derivatives", ("derivative", "differentiat", "d/dx", "slope of a curve", "rate of change",
+                                         "chain rule", "product rule", "quotient rule", "calculus"), (
+        Proxy("How fast is x^3 changing at any point? Find its derivative.", "derivative of x^3"),
+        Proxy("Find the derivative of x^2 sin(x).", "derivative of x^2 sin(x)"),
+        Proxy("Find the derivative of sin(x^2).", "derivative of sin(x^2)"),
+    )),
+    Topic("integrals", "Integrals", ("integra", "antiderivative", "area under", "∫"), (
+        Proxy("Find the area under y = x^2 between x = 0 and x = 3.", "integral from 0 to 3 of x^2 dx"),
+        Proxy("Integrate 2x cos(x^2).", "integral of 2x cos(x^2) dx"),
+        Proxy("Integrate x e^x.", "integral of x e^x dx"),
+    )),
+    Topic("limits", "Limits", ("limit", "approaches", "tends to", "l'hopital", "l'hôpital"), (
+        Proxy("What value does sin(x)/x get closer to as x gets close to 0?", "limit of sin(x)/x as x -> 0"),
+        Proxy("What happens to (x^2 - 1)/(x - 1) as x gets close to 1?", "limit of (x^2 - 1)/(x - 1) as x -> 1"),
+    )),
     Topic("complex_numbers", "Complex numbers", ("complex", "imaginary", "argand", "conjugate", "modulus"), (
         Proxy("Add the complex numbers 2 + 3i and 1 - i.", "(2 + 3i) + (1 - i)"),
         Proxy("Multiply 1 + 2i by 3 - i.", "(1 + 2i)(3 - i)"),
@@ -112,7 +132,8 @@ TOPIC_CHOICES: tuple[str, ...] = tuple(
     next(t.name for t in TOPICS if t.key == key)
     for key in ("addition_subtraction", "multiplication_division", "fractions", "decimals", "percentages",
                 "ratios", "order_of_operations", "exponents", "factorials_counting", "angles_triangles", "area_perimeter", "linear_equations",
-                "inequalities", "simultaneous_equations", "quadratics", "complex_numbers", "matrices")
+                "inequalities", "simultaneous_equations", "quadratics", "complex_numbers", "matrices",
+                "limits", "derivatives", "integrals", "differential_equations")
 )
 
 

@@ -62,7 +62,7 @@ def test_blurry_photo_falls_back_to_verified_proxy(blurry_photo):
 
 
 def test_unknown_topic_uses_llm_proxy_only_if_it_checks_out(blurry_photo):
-    calculus = {**BLURRY, "topic": "derivatives"}
+    calculus = {**BLURRY, "topic": "topology"}
     services = FakeServices(reads={"primary": calculus, "backup": calculus},
                             proxies=[{"problem_text": "Bad", "expression": "d/dx of what?"}])
     state = run({"image": blurry_photo}, services)

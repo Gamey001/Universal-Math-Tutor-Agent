@@ -59,6 +59,10 @@ topic button ──────────────────────�
 | Simultaneous equations | `x + y = 10; x - y = 2` (also with commas or "and") |
 | Complex numbers | `(2 + 3i)(1 - i)`, `(1 + 2i) / (3 - i)`, `abs(3 + 4i)`, `polar(1 + i)`, `i^7`, `x^2 + 2x + 5 = 0` |
 | Matrices | `det [[1, 2], [3, 4]]`, `inverse of [[4, 7], [2, 6]]`, `[[1, 2], [3, 4]] * [[5, 6], [7, 8]]`, `eigenvalues of [[2, 1], [1, 2]]`, `rank`, `rref`, `trace`, `transpose`, `A^3`, `solve [[2, 1], [1, 3]] x = [3, 5]` |
+| Derivatives | `derivative of x^2 sin(x)`, `d/dx (3x^4 - 2x)`, `second derivative of x^3`, `f'(x) for f(x) = sqrt(x^2 + 1)` (power, product, quotient, chain rules named) |
+| Integrals | `integral of x e^x dx`, `integral from 0 to 1 of x^2 dx`, `∫ x ln(x) dx` (substitution, integration by parts, …) |
+| Limits | `limit of sin(x)/x as x -> 0`, `limit of (1 + 1/n)^n as n -> infinity`, one-sided limits (L'Hôpital's rule shown) |
+| Differential equations, series | `y' = 2y, y(0) = 3`, `y'' + y = 0`, `y' + y = x`, `taylor series of e^x`, `maclaurin series of sin(x) to order 5` |
 | Word and diagram problems | "Maria is 3 times as old as her son…", angle problems from a photo |
 
 ### Accuracy safeguards
@@ -77,11 +81,14 @@ Small local models are good at language and unreliable at arithmetic and at read
    rewrite, and if it persists, that sentence is removed.
 4. **The learner can always correct the reading.** Photo answers show "I read your problem as …" with a box to fix it,
    and diagram descriptions are editable when a setup fails.
-6. **Setups are cross-checked.** Word and diagram problems are set up twice, independently: first quickly (thinking
+5. **Setups are cross-checked.** Word and diagram problems are set up twice, independently: first quickly (thinking
    off, seconds), then, only if those disagree, carefully (thinking on, capped). Only an agreed answer is shown.
    In testing, a quick setup wrongly treated vertically opposite angles as adding to 180° (x = 40); the
    disagreement triggered the careful pass, which found x = 50.
-5. **Blank-photo pre-check** (`tutor/images.py`): blank or completely flat images go straight to "ask for context"
+6. **Calculus answers are checked a second, independent way**: integrals by differentiating the answer (plus a
+   numerical area for definite ones), derivatives by a numerical slope, limits by evaluating right next to the point,
+   differential equations by substituting the solution back in, Taylor polynomials against SymPy's own series.
+7. **Blank-photo pre-check** (`tutor/images.py`): blank or completely flat images go straight to "ask for context"
    without waiting on the models.
 
 ## Project layout
@@ -91,12 +98,13 @@ app.py               Streamlit UI (conversation, topic buttons, corrections, "ho
 tutor/graph.py       LangGraph state machine and routing
 tutor/math_tool.py   SymPy engine: parse safely, solve, generate steps, verify (incl. complex numbers, systems)
 tutor/matrix_tool.py Matrix operations with their own eval-free parser
+tutor/calculus_tool.py Derivatives, integrals, limits, ODEs, Taylor series, each checked a second way
 tutor/explain.py     Tutor prose → number guard → final Markdown lesson
 tutor/services.py    Ollama calls (vision, transcription, text parsing, proxy problems)
 tutor/topics.py      Known topics + ready-made, verified practice problems
 tutor/images.py      Image loading, downscaling, blank detection
 tutor/prompts.py     Every prompt and every learner-facing fixed message
-tests/               123 tests; models are faked, so no Ollama needed
+tests/               159 tests; models are faked, so no Ollama needed
 ```
 
 ## Tests

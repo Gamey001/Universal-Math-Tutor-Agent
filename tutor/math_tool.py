@@ -44,6 +44,8 @@ _ALLOWED_NAMES = {
     "ceil": sp.ceiling,
     "mod": sp.Mod,
     "i": sp.I,  # imaginary unit, as written in school: 3 + 4i
+    "e": sp.E,  # Euler's number: e^x
+    "oo": sp.oo,  # infinity, for limits and integrals
     "conjugate": sp.conjugate,
     "arg": sp.arg,
     "re": sp.re,
@@ -138,13 +140,13 @@ _UNEVALUATED_NAMES = {
 }
 
 
-def _parse(side: str, evaluate: bool = True) -> sp.Expr:
+def _parse(side: str, evaluate: bool = True, extra: dict | None = None) -> sp.Expr:
     side = re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", side)  # thousands separators: 1,000 -> 1000
     if not side.strip():
         raise MathInputError("One side of the problem is empty.")
     try:
-        names = _ALLOWED_NAMES if evaluate else _UNEVALUATED_NAMES
-        expr = parse_expr(side, local_dict=dict(names), transformations=_TRANSFORMS, evaluate=evaluate)
+        names = {**(_ALLOWED_NAMES if evaluate else _UNEVALUATED_NAMES), **(extra or {})}
+        expr = parse_expr(side, local_dict=names, transformations=_TRANSFORMS, evaluate=evaluate)
     except Exception as exc:  # SyntaxError, TokenError, TypeError, ...
         raise MathInputError("I couldn't make sense of how this problem is written.") from exc
     # (A plain Symbol is also a Boolean in SymPy, so it's allowed explicitly.)
@@ -628,6 +630,9 @@ def _solve(text: str) -> MathResult:
     if "[" in (text or ""):
         from .matrix_tool import solve_matrix_problem  # matrices have their own parser
         return solve_matrix_problem(text)
+    from .calculus_tool import looks_like_calculus, solve_calculus_problem
+    if looks_like_calculus(text or ""):
+        return solve_calculus_problem(text)
     stripped = re.sub(r"^(solve|find)\b[:\s]*", "", (text or "").strip(), flags=re.IGNORECASE)
     equations = _split_equations(stripped)
     if equations:  # simultaneous equations typed together
