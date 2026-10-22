@@ -1,0 +1,148 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <!-- Math input with an on-screen keyboard (MathLive, MIT licence, bundled locally: works offline). -->
+  <script src="mathlive.min.js"></script>
+  <style>
+    body { margin: 0; padding: 4px 2px 8px; font-family: "Source Sans Pro", sans-serif; background: transparent; }
+    .label { color: #2f5d50; font-size: 0.95rem; margin: 0 0 6px 2px; }
+    math-field {
+      display: block; width: 100%; box-sizing: border-box; font-size: 1.6rem; padding: 10px 12px;
+      border: 1.5px solid #cfe0d8; border-radius: 12px; background: #ffffff; color: #1f2a27;
+      --caret-color: #3f7d6a; --selection-background-color: #d9ece4; --contains-highlight-background-color: #f2f8f5;
+    }
+    math-field:focus-within { outline: none; border-color: #3f7d6a; box-shadow: 0 0 0 3px #e3f0ea; }
+    .row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+    button {
+      border-radius: 10px; border: 1px solid #cfe0d8; background: #ffffff; color: #2f5d50; padding: 7px 14px;
+      font-size: 0.95rem; cursor: pointer;
+    }
+    button.primary { background: #3f7d6a; border-color: #3f7d6a; color: #ffffff; }
+    button:hover { filter: brightness(0.97); }
+    .hint { color: #6b7a75; font-size: 0.82rem; margin-left: auto; }
+  </style>
+</head>
+<body>
+  <div class="label" id="label"></div>
+  <math-field id="field" math-virtual-keyboard-policy="manual"></math-field>
+  <div class="row">
+    <button class="primary" id="submit">Solve this</button>
+    <button id="keys" title="Show or hide the math keyboard">⌨️ Keyboard</button>
+    <button id="clear">Clear</button>
+    <span class="hint">Tip: type normally too, e.g. x^2, sqrt, int, pi</span>
+  </div>
+
+<script>
+  // ---- Streamlit component protocol (no build step needed) ----
+  function send(type, data) { window.parent.postMessage(Object.assign({isStreamlitMessage: true, type}, data), "*"); }
+  function setHeight() {
+    const kb = window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible
+      ? window.mathVirtualKeyboard.boundingRect.height : 0;
+    send("streamlit:setFrameHeight", {height: document.body.scrollHeight + kb + 12});
+  }
+  let nonce = 0;
+
+  // ---- MathLive set-up ----
+  // Inside an iframe MathLive would send the keyboard to the top page (which doesn't load MathLive):
+  // mount it here instead.
+  MathLive.initVirtualKeyboardInCurrentBrowsingContext();
+  MathfieldElement.fontsDirectory = "./fonts";
+  MathfieldElement.soundsDirectory = null;
+  const field = document.getElementById("field");
+  const k = (latex, label, extra) => Object.assign({latex, label: label || undefined}, extra || {});
+
+  const CALCULUS = {
+    label: "Calculus", tooltip: "Integrals, derivatives, limits, sums",
+    rows: [
+      [k("\\int_{#?}^{#?}#0\\,d#?", "∫ₐᵇ"), k("\\int #0\\,dx", "∫ dx"), k("\\iint #0\\,dA", "∬"),
+       k("\\oint #0", "∮"), k("\\frac{d}{dx}\\left(#0\\right)", "d/dx"), k("\\frac{d^{2}}{dx^{2}}\\left(#0\\right)", "d²/dx²"),
+       k("\\frac{\\partial}{\\partial x}#0", "∂/∂x"), k("\\frac{dy}{dx}", "dy/dx"), k("y'", "y′"), k("y''", "y″")],
+      [k("\\lim_{x\\to #?}#0", "lim"), k("\\lim_{x\\to\\infty}#0", "lim ∞"), k("\\lim_{x\\to #?^{+}}#0", "lim a⁺"),
+       k("\\lim_{x\\to #?^{-}}#0", "lim a⁻"), k("\\sum_{k=#?}^{#?}#0", "Σ"), k("\\prod_{k=#?}^{#?}#0", "∏"),
+       k("\\infty", "∞"), k("\\to", "→"), k("\\nabla", "∇"), k("\\Delta", "Δ")],
+      [k("e^{#0}", "eˣ"), k("\\ln\\left(#0\\right)", "ln"), k("\\log_{#?}\\left(#0\\right)", "logₐ"), k("\\log\\left(#0\\right)", "log"),
+       k("\\sqrt{#0}", "√"), k("\\sqrt[#?]{#0}", "ⁿ√"), k("#@^{#?}", "xⁿ"), k("\\frac{#@}{#?}", "a/b"), k("\\left|#0\\right|", "|x|"),
+       k("dx", "dx")],
+    ],
+  };
+  const ALGEBRA = {
+    label: "Algebra", tooltip: "Equations, powers, roots, inequalities",
+    rows: [
+      [k("x"), k("y"), k("z"), k("n"), k("a"), k("b"), k("="), k("\\ne", "≠"), k("<"), k(">"), k("\\le", "≤"), k("\\ge", "≥")],
+      [k("#@^{2}", "x²"), k("#@^{3}", "x³"), k("#@^{#?}", "xⁿ"), k("\\sqrt{#0}", "√"), k("\\sqrt[3]{#0}", "∛"),
+       k("\\frac{#@}{#?}", "a/b"), k("\\left(#0\\right)", "( )"), k("\\left|#0\\right|", "|x|"), k("\\pm", "±"), k("!", "n!")],
+      [k("\\cdot", "·"), k("\\times", "×"), k("\\div", "÷"), k("\\%", "%"), k("\\binom{#?}{#?}", "nCr"), k("i"), k("\\pi", "π"),
+       k("e"), k("\\infty", "∞"), k(";", "; (next equation)")],
+    ],
+  };
+  const TRIG = {
+    label: "Trig & logs", tooltip: "Trigonometry, logarithms, exponentials",
+    rows: [
+      [k("\\sin\\left(#0\\right)", "sin"), k("\\cos\\left(#0\\right)", "cos"), k("\\tan\\left(#0\\right)", "tan"),
+       k("\\sec\\left(#0\\right)", "sec"), k("\\csc\\left(#0\\right)", "csc"), k("\\cot\\left(#0\\right)", "cot")],
+      [k("\\arcsin\\left(#0\\right)", "sin⁻¹"), k("\\arccos\\left(#0\\right)", "cos⁻¹"), k("\\arctan\\left(#0\\right)", "tan⁻¹"),
+       k("\\sin^{2}\\left(#0\\right)", "sin²"), k("\\cos^{2}\\left(#0\\right)", "cos²"), k("\\theta", "θ")],
+      [k("\\ln\\left(#0\\right)", "ln"), k("\\log_{#?}\\left(#0\\right)", "logₐ"), k("e^{#0}", "eˣ"), k("\\pi", "π"),
+       k("#@^{\\circ}", "°"), k("\\alpha", "α")],
+    ],
+  };
+  const MATRICES = {
+    label: "Matrices", tooltip: "Matrices, determinants, inverses",
+    rows: [
+      [k("\\begin{pmatrix}#?&#?\\\\#?&#?\\end{pmatrix}", "2×2"),
+       k("\\begin{pmatrix}#?&#?&#?\\\\#?&#?&#?\\\\#?&#?&#?\\end{pmatrix}", "3×3"),
+       k("\\begin{pmatrix}#?\\\\#?\\end{pmatrix}", "vector"), k("\\begin{vmatrix}#?&#?\\\\#?&#?\\end{vmatrix}", "det |2×2|")],
+      [k("#@^{-1}", "A⁻¹"), k("#@^{T}", "Aᵀ"), k("\\cdot", "·"), k("\\times", "×"), k("x", "x"), k("=")],
+    ],
+  };
+  const SETS = {
+    label: "Sets & logic", tooltip: "Sets, number systems, logic",
+    rows: [
+      [k("\\in", "∈"), k("\\notin", "∉"), k("\\subset", "⊂"), k("\\subseteq", "⊆"), k("\\cup", "∪"), k("\\cap", "∩"),
+       k("\\setminus", "∖"), k("\\emptyset", "∅"), k("\\{#0\\}", "{ }")],
+      [k("\\mathbb{N}", "ℕ"), k("\\mathbb{Z}", "ℤ"), k("\\mathbb{Q}", "ℚ"), k("\\mathbb{R}", "ℝ"), k("\\mathbb{C}", "ℂ"),
+       k("\\forall", "∀"), k("\\exists", "∃"), k("\\neg", "¬")],
+      [k("\\land", "∧"), k("\\lor", "∨"), k("\\Rightarrow", "⇒"), k("\\Leftrightarrow", "⇔"), k("\\equiv", "≡"),
+       k("\\approx", "≈"), k("\\propto", "∝"), k("\\angle", "∠"), k("\\perp", "⊥"), k("\\parallel", "∥")],
+    ],
+  };
+  mathVirtualKeyboard.layouts = ["numeric", CALCULUS, ALGEBRA, TRIG, MATRICES, SETS, "greek", "alphabetic"];
+  mathVirtualKeyboard.addEventListener("geometrychange", setHeight);
+  field.addEventListener("focusin", () => { mathVirtualKeyboard.show(); setHeight(); });
+  field.addEventListener("input", setHeight);
+
+  document.getElementById("keys").onclick = () => {
+    mathVirtualKeyboard.visible ? mathVirtualKeyboard.hide() : (field.focus(), mathVirtualKeyboard.show());
+    setTimeout(setHeight, 50);
+  };
+  document.getElementById("clear").onclick = () => { field.value = ""; field.focus(); };
+  document.getElementById("submit").onclick = () => {
+    const latex = field.getValue("latex-expanded").trim();
+    if (!latex) { field.focus(); return; }
+    nonce += 1;
+    send("streamlit:setComponentValue", {value: {latex, nonce}, dataType: "json"});
+  };
+  field.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) document.getElementById("submit").click();
+  });
+
+  // ---- Render: Python sends the label, button text and any starting value ----
+  let started = false;
+  window.addEventListener("message", (event) => {
+    if (!event.data || event.data.type !== "streamlit:render") return;
+    const args = event.data.args || {};
+    document.getElementById("label").textContent = args.label || "";
+    document.getElementById("submit").textContent = args.button || "Solve this";
+    if (!started) {
+      started = true;
+      if (args.value) field.value = args.value;
+      field.placeholder = args.placeholder || "\\text{Type or tap your math here}";
+    }
+    setHeight();
+  });
+  send("streamlit:componentReady", {apiVersion: 1});
+  window.addEventListener("load", setHeight);
+</script>
+</body>
+</html>

@@ -46,6 +46,10 @@ _ALLOWED_NAMES = {
     "i": sp.I,  # imaginary unit, as written in school: 3 + 4i
     "e": sp.E,  # Euler's number: e^x
     "oo": sp.oo,  # infinity, for limits and integrals
+    # Greek letters (from the math keyboard) are just variable names.
+    **{g: sp.Symbol(g) for g in ("alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota",
+                                 "kappa", "mu", "nu", "xi", "rho", "sigma", "tau", "upsilon", "phi", "chi", "psi",
+                                 "omega", "lamda")},
     "conjugate": sp.conjugate,
     "arg": sp.arg,
     "re": sp.re,
@@ -325,7 +329,7 @@ def _quadratic_formula_steps(expr: sp.Expr, var: sp.Symbol) -> list[str]:
 def _quadratic_steps(lhs: sp.Expr, rhs: sp.Expr, var: sp.Symbol) -> list[str]:
     """Factor-and-split steps when a quadratic factors over the rationals, else the formula."""
     expr = sp.expand(lhs - rhs)
-    if expr.free_symbols != {var} or sp.Poly(expr, var).degree() != 2:
+    if expr.free_symbols != {var} or not expr.is_polynomial(var) or sp.Poly(expr, var).degree() != 2:
         return []
     factored = sp.factor(expr)
     factors = [f for f in sp.Mul.make_args(factored) if f.has(var)]
@@ -348,7 +352,7 @@ def _quadratic_steps(lhs: sp.Expr, rhs: sp.Expr, var: sp.Symbol) -> list[str]:
 def _linear_parts(expr: sp.Expr, var: sp.Symbol) -> tuple[sp.Expr, sp.Expr] | None:
     """(coefficient, constant) if expr is linear in var, else None."""
     expr = sp.expand(expr)
-    if not expr.free_symbols <= {var}:
+    if not expr.free_symbols <= {var} or not expr.is_polynomial(var):  # log(x), sin(x)...: no balance steps
         return None
     poly = sp.Poly(expr, var)
     if poly.degree() > 1:

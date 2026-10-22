@@ -13,6 +13,8 @@ from tutor import config
 from tutor.graph import ServiceUnavailable, build_graph, unconfirmed_readings
 from tutor.services import OllamaServices, installed_models
 from tutor.topics import TOPIC_CHOICES
+from tutor.latex_input import LatexInputError, latex_to_problem
+from tutor.math_keyboard import math_input
 from tutor.ui import PAGE_CSS, lesson_html
 
 st.set_page_config(page_title="Slow & Steady Math Tutor", page_icon="🐢", layout="centered")
@@ -73,16 +75,31 @@ def sidebar() -> None:
         st.rerun()
 
 
-def queue(inputs: dict, label: str) -> None:
+def queue(inputs: dict, label: str, latex: str = "") -> None:
     """Remember a request; it runs on the next script pass, with progress shown."""
-    st.session_state.pending = {"inputs": inputs, "label": label}
+    st.session_state.pending = {"inputs": inputs, "label": label, "latex": latex}
+
+
+def keyboard_entry(key: str, label: str, button: str = "Solve this") -> None:
+    """The math keyboard; a submission is converted and queued like a typed question."""
+    latex = math_input(key, label=label, button=button)
+    if not latex:
+        return
+    try:
+        problem = latex_to_problem(latex)
+    except LatexInputError as exc:
+        st.warning(f"{exc} You can also type it in words instead.")
+        return
+    queue({"text": problem}, problem, latex=latex)
+    st.rerun()
 
 
 def run_pending() -> None:
     pending = st.session_state.pop("pending", None)
     if not pending:
         return
-    turn = {"id": uuid.uuid4().hex, "label": pending["label"], "image": pending["inputs"].get("image")}
+    turn = {"id": uuid.uuid4().hex, "label": pending["label"], "image": pending["inputs"].get("image"),
+            "latex": pending.get("latex", "")}
     with st.status("Let's take this slowly…", expanded=False) as status:
         try:
             state: dict = {}
@@ -118,8 +135,10 @@ def render_reading(turn: dict, state: dict, is_latest: bool) -> None:
                 queue({"text": reading}, reading)
                 st.rerun()
     if is_latest and (math or readings):
+        with st.expander("Not quite right? Write it with the math keyboard"):
+            keyboard_entry(f"fix-kb-{turn['id']}", "Write the problem exactly as it is in your photo:", "Check this instead")
         with st.form(key=f"fix-{turn['id']}", border=False):
-            fixed = st.text_input("Not quite right? Type the problem exactly as it's written:",
+            fixed = st.text_input("Or type it:",
                                   placeholder="for example 3/4 + 1/8")
             if st.form_submit_button("Check this instead") and fixed.strip():
                 queue({"text": fixed.strip()}, fixed.strip())
@@ -133,6 +152,8 @@ def render_context_request(turn: dict, state: dict) -> None:
         if cols[i % 3].button(topic, key=f"topic-{turn['id']}-{i}", width="stretch"):
             queue({"requested_topic": topic}, f"Help with {topic.lower()}")
             st.rerun()
+    with st.expander("Write the problem with the math keyboard (∫, √, Σ, matrices…)"):
+        keyboard_entry(f"context-kb-{turn['id']}", "Write your problem here:")
     with st.form(key=f"context-{turn['id']}", border=False):
         reply = st.text_input("Or tell me in your own words:",
                               placeholder="e.g. adding fractions, or 2x + 3 = 11")
@@ -207,6 +228,8 @@ def render_turn(turn: dict, is_latest: bool) -> None:
     with st.chat_message("user", avatar="🙂"):
         if turn.get("image"):
             st.image(turn["image"], width=280)
+        elif turn.get("latex"):
+            st.latex(turn["latex"])  # what the learner wrote with the math keyboard, as real notation
         else:
             st.markdown(turn["label"])
     with st.chat_message("assistant", avatar="🐢"):
@@ -245,6 +268,9 @@ def input_area() -> None:
             queue({"image": image.getvalue()}, "📷 photo")
             st.rerun()
     with type_tab:
+        if st.toggle("Use the math keyboard (∫, d/dx, lim, Σ, √, matrices, Greek…)", key="use-keyboard"):
+            keyboard_entry("typed-kb", "Write your problem. Tap ⌨️ Keyboard for every math symbol:")
+            return
         with st.form("typed", border=False, clear_on_submit=True):
             text = st.text_area("Type a problem, a word problem, or a topic you'd like to understand",
                                 placeholder="e.g.  2x + 3 = 11   ·   What is 25% of 40?   ·   I don't get fractions",
